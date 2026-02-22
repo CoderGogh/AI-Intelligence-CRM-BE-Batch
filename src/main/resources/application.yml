@@ -1,0 +1,31 @@
+spring:
+  batch:
+    jdbc:
+      initialize-schema: always
+
+  datasource:
+    url: jdbc:mysql://localhost:13306/crm?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: crm
+    password: crm
+
+  data:
+    mongodb:
+      uri: mongodb://localhost:27018/crm
+
+  redis:
+    host: localhost
+    port: 6380
+
+  elasticsearch:
+    uris: http://localhost:9201
+
+  kafka:
+    bootstrap-servers: localhost:29092
+    consumer:
+      group-id: crm-group
+      auto-offset-reset: earliest
+    producer:
+      acks: all
+
+server:
+  port: 8090
