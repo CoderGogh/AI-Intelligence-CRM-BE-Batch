@@ -1,6 +1,6 @@
-package com.uplus.batch.dummy.customer;
+package com.uplus.batch.jobs.customer_dummy.processor;
 
-import com.uplus.batch.dummy.customer.dto.CustomerRow;
+import com.uplus.batch.domain.customer.dto.CustomerRow;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;

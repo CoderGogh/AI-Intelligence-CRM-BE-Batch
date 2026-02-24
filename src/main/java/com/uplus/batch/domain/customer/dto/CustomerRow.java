@@ -1,4 +1,4 @@
-package com.uplus.batch.dummy.customer.dto;
+package com.uplus.batch.domain.customer.dto;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;

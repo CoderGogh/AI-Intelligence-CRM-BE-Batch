@@ -1,6 +1,7 @@
-package com.uplus.batch.dummy.customer;
+package com.uplus.batch.jobs.customer_dummy.config;
 
-import com.uplus.batch.dummy.customer.dto.CustomerRow;
+import com.uplus.batch.domain.customer.dto.CustomerRow;
+import com.uplus.batch.jobs.customer_dummy.processor.CustomerProcessor;
 import java.util.stream.IntStream;
 import javax.sql.DataSource;
 import lombok.RequiredArgsConstructor;
