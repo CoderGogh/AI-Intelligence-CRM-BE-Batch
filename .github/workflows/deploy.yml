@@ -2,10 +2,8 @@ name: Deploy Batch
 
 on:
   push:
-    branches: [ "main" ]
-    paths:
-      - "batch/**"
-      - ".github/workflows/batch.yml"
+    branches:
+      - main
 
 jobs:
   build-and-deploy:
