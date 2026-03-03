@@ -1,7 +1,9 @@
 package com.uplus.batch.jobs.summary_dummy.tasklet;
 
 import com.uplus.batch.domain.summary.entity.ConsultationSummary;
+import com.uplus.batch.jobs.summary_dummy.dto.ConsultationResultRow;
 import com.uplus.batch.jobs.summary_dummy.generator.ConsultationSummaryDummyGenerator;
+import com.uplus.batch.jobs.summary_dummy.repository.ConsultationResultRepository;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -19,34 +21,56 @@ public class ConsultationSummaryDummyTasklet implements Tasklet {
 
   private final MongoTemplate mongoTemplate;
   private final ConsultationSummaryDummyGenerator generator;
+  private final ConsultationResultRepository resultRepository;
 
   @Override
   public RepeatStatus execute(StepContribution contribution,
       ChunkContext chunkContext) {
 
-    long count = Long.parseLong(
+    long startId = Long.parseLong(
         chunkContext.getStepContext()
             .getJobParameters()
-            .get("count")
+            .get("startId")
             .toString()
     );
 
-    int chunkSize = 1000;
+    long endId = Long.parseLong(
+        chunkContext.getStepContext()
+            .getJobParameters()
+            .get("endId")
+            .toString()
+    );
 
-    for (int i = 0; i < count; i += chunkSize) {
+    if (startId > endId) {
+      throw new IllegalArgumentException("startId must be <= endId");
+    }
 
-      int current = (int) Math.min(chunkSize, count - i);
+    int chunkSize = 100;
+    long currentStart = startId;
 
-      List<ConsultationSummary> list = new ArrayList<>(current);
+    while (currentStart <= endId) {
 
-      for (int j = 0; j < current; j++) {
-        list.add(generator.generate());
+      long currentEnd = Math.min(currentStart + chunkSize - 1, endId);
+
+      List<ConsultationResultRow> rows =
+          resultRepository.findByRange(currentStart, currentEnd);
+
+      if (!rows.isEmpty()) {
+
+        List<ConsultationSummary> summaries =
+            new ArrayList<>(rows.size());
+
+        for (ConsultationResultRow row : rows) {
+          summaries.add(generator.generate(row));
+        }
+
+        mongoTemplate
+            .bulkOps(BulkOperations.BulkMode.UNORDERED, ConsultationSummary.class)
+            .insert(summaries)
+            .execute();
       }
 
-      mongoTemplate
-          .bulkOps(BulkOperations.BulkMode.UNORDERED, ConsultationSummary.class)
-          .insert(list)
-          .execute();
+      currentStart = currentEnd + 1;
     }
 
     return RepeatStatus.FINISHED;

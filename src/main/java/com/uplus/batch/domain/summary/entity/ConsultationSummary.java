@@ -2,6 +2,9 @@ package com.uplus.batch.domain.summary.entity;
 
 import lombok.*;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.IndexDirection;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
@@ -13,31 +16,29 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Document(collection = "consultation_summary")
+@CompoundIndex(name = "idx_consultedAt_agentId",
+    def = "{'consultedAt':-1,'agent.id':1}")
 public class ConsultationSummary {
 
   @Id
   private String id; // _id (ObjectId)
 
+  @Indexed(name = "uq_consultId", unique = true)
   private Long consultId;
+
+  @Indexed(name = "idx_consultedAt", direction = IndexDirection.DESCENDING)
   private LocalDateTime consultedAt;
 
   private String channel;
   private Integer durationSec;
-
   private Agent agent;
   private Category category;
   private Iam iam;
-
   private Summary summary;
-
   private List<String> riskFlags;
-
   private Customer customer;
-
   private Cancellation cancellation;
-
   private ResultProducts resultProducts;
-
   private LocalDateTime createdAt;
 
   // ================= Embedded =================
@@ -97,19 +98,13 @@ public class ConsultationSummary {
     private List<String> subscribed;
     private List<String> canceled;
     private List<Conversion> conversion;
-    private List<Recommitment> recommitment;
+    private List<String> recommitment;
     private String changeType;
 
     @Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor
     public static class Conversion {
       private String subscribed;
       private String canceled;
-    }
-
-    @Getter @Setter @Builder @NoArgsConstructor @AllArgsConstructor
-    public static class Recommitment {
-      private String product;
-      private Integer months;
     }
   }
 }

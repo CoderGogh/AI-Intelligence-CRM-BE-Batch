@@ -54,16 +54,27 @@ public class DummyBatchController {
   }
 
   @PostMapping("/summary-dummy")
-  public ResponseEntity<String> run(@RequestParam long count) throws Exception {
+  public ResponseEntity<String> run(
+      @RequestParam long startId,
+      @RequestParam long endId
+  ) throws Exception {
+
+    if (startId > endId) {
+      return ResponseEntity.badRequest()
+          .body("startId must be less than or equal to endId");
+    }
 
     JobParameters jobParameters =
         new JobParametersBuilder()
-            .addLong("count", count)
+            .addLong("startId", startId)
+            .addLong("endId", endId)
             .addLong("runId", System.currentTimeMillis()) // 중복 실행 방지
             .toJobParameters();
 
     jobLauncher.run(consultationSummaryDummyJob, jobParameters);
 
-    return ResponseEntity.ok("Batch started");
+    return ResponseEntity.ok(
+        "Batch started: startId=" + startId + ", endId=" + endId
+    );
   }
 }
