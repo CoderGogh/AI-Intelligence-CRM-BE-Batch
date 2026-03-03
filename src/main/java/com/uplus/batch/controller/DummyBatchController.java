@@ -21,6 +21,7 @@ public class DummyBatchController {
   private final Job subscriptionDummyJob;
   private final Job consultationDummyJob;
   private final Job consultationSummaryDummyJob;
+  private final Job rawTextDummyJob;
 
   @PostMapping("/customers")
   public ResponseEntity<String> runCustomerDummy(
@@ -77,6 +78,33 @@ public class DummyBatchController {
     return ResponseEntity.ok(
         "Batch started: startId=" + startId + ", endId=" + endId
     );
+  }
+
+  /**
+   * 상담 원문 더미데이터 생성 (consultation_results 데이터 필요)
+   * curl -X POST "http://localhost:8081/dummy/raw-texts?startId=1&endId=100"
+   */
+  @PostMapping("/raw-texts")
+  public ResponseEntity<String> runRawTextDummy(
+      @RequestParam long startId,
+      @RequestParam long endId
+  ) throws Exception {
+
+    if (startId > endId) {
+      return ResponseEntity.badRequest()
+          .body("startId must be less than or equal to endId");
+    }
+
+    JobParameters jobParameters = new JobParametersBuilder()
+        .addLong("startId", startId)
+        .addLong("endId", endId)
+        .addLong("runId", System.currentTimeMillis())
+        .toJobParameters();
+
+    jobLauncher.run(rawTextDummyJob, jobParameters);
+
+    return ResponseEntity.ok(
+        "Raw text dummy job started: startId=" + startId + ", endId=" + endId);
   }
 
   /**
