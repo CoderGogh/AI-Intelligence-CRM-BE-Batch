@@ -19,6 +19,7 @@ public class DummyBatchController {
   private final JobLauncher jobLauncher;
   private final Job customerDummyJob;
   private final Job subscriptionDummyJob;
+  private final Job consultationDummyJob;
   private final Job consultationSummaryDummyJob;
 
   @PostMapping("/customers")
@@ -76,5 +77,24 @@ public class DummyBatchController {
     return ResponseEntity.ok(
         "Batch started: startId=" + startId + ", endId=" + endId
     );
+  }
+
+  /**
+   * 상담 결과 더미데이터 생성 (employees, customers, consultation_category_policy 데이터 필요)
+   * curl -X POST "http://localhost:8081/dummy/consultations?count=50"
+   */
+  @PostMapping("/consultations")
+  public ResponseEntity<String> runConsultationDummy(
+      @RequestParam(defaultValue = "10") int count
+  ) throws Exception {
+
+    JobParameters jobParameters = new JobParametersBuilder()
+        .addLong("runId", System.currentTimeMillis())
+        .addLong("count", (long) count)
+        .toJobParameters();
+
+    jobLauncher.run(consultationDummyJob, jobParameters);
+
+    return ResponseEntity.ok("Consultation dummy job started (" + count + "건)");
   }
 }
