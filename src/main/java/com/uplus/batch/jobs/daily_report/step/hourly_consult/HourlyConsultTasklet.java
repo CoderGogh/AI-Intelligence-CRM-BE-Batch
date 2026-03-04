@@ -111,7 +111,11 @@ public class HourlyConsultTasklet implements Tasklet {
                 .mapToInt(d -> d.getInteger("count", 0))
                 .sum();
         double slotTotalDurationSec = categoryDocs.stream()
-                .mapToDouble(d -> d.getDouble("avgDurationSec") * d.getInteger("count", 0))
+                .mapToDouble(d -> {
+                    Double avg = d.get("avgDurationSec") instanceof Number
+                            ? ((Number) d.get("avgDurationSec")).doubleValue() : 0.0;
+                    return avg * d.getInteger("count", 0);
+                })
                 .sum();
         double slotAvgDurationMin = slotTotalCount > 0
                 ? (slotTotalDurationSec / slotTotalCount) / 60.0
@@ -233,7 +237,8 @@ public class HourlyConsultTasklet implements Tasklet {
         return docs.stream().map(doc -> {
             String largeName = doc.getString("_id");
             int count = doc.getInteger("count", 0);
-            double avgSec = doc.getDouble("avgDurationSec");
+            double avgSec = doc.get("avgDurationSec") instanceof Number
+                    ? ((Number) doc.get("avgDurationSec")).doubleValue() : 0.0;
             double rate = totalCount > 0
                     ? Math.round((count * 100.0 / totalCount) * 10.0) / 10.0
                     : 0;
