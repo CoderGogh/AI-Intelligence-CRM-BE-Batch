@@ -68,4 +68,8 @@ public class ResultEventStatus {
         this.failReason = reason;
         this.retryCount++;
     }
+    public void retry() {
+        this.status = EventStatus.REQUESTED;
+        this.failReason = null; 
+    }
 }
