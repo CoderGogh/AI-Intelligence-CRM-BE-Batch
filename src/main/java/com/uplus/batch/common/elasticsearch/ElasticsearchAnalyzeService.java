@@ -20,7 +20,8 @@ public class ElasticsearchAnalyzeService {
 
     AnalyzeResponse response = elasticsearchClient.indices().analyze(
         AnalyzeRequest.of(a -> a
-            .analyzer("nori")
+            .index("consult-index")
+            .analyzer("consult_index_analyzer")
             .text(text)
         )
     );
