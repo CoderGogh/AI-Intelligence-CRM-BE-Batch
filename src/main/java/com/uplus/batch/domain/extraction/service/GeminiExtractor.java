@@ -33,10 +33,10 @@ public class GeminiExtractor {
             }})
             .build();
 
-    private static final String MODEL_NAME = "gemini-2.5-flash"; 
+    // 1. 모델명을 Flash-Lite로 변경 (가장 비용 효율적인 모델)
+    private static final String MODEL_NAME = "gemini-2.5-flash-lite"; 
     
-    //재시도 설정 (네트워크 에러 시 2초 간격으로 최대 3번 시도)
-    @Retryable( 							
+    @Retryable(                             
         retryFor = {Exception.class}, 
         maxAttempts = 3, 
         backoff = @Backoff(delay = 2000)
@@ -65,30 +65,25 @@ public class GeminiExtractor {
             """, rawIssue);
 
         try {
-            log.info("[AI] 호출 모델: {}, 분석 프로세스 시작...", MODEL_NAME);
+            log.info("[AI] 호출 모델: {}, 분석 시작...", MODEL_NAME);
             
             String rawResponse = restClient.post()
                     .uri(url)
                     .body(buildGeminiPayload(prompt))
                     .retrieve()
-                    // 4xx, 5xx 에러 발생 시 상세 메시지 로그 기록
                     .onStatus(HttpStatusCode::isError, (request, response) -> {
                         log.error("[AI API Error] 상태 코드: {}, 사유: {}", response.getStatusCode(), response.getStatusText());
                     })
                     .body(String.class);
 
-            // 1. Gemini 응답 구조에서 실제 텍스트 부분 추출 및 검증
             String extractedText = parseGeminiResponse(rawResponse);
-            
-            // 2. JSON 문자열 정제 (마크다운 제거 등)
             String cleanedJson = cleanJsonString(extractedText);
 
-            log.info("[AI] 분석 성공 및 JSON 파싱 완료");
+            log.info("[AI] {} 분석 성공 및 JSON 파싱 완료", MODEL_NAME);
             return objectMapper.readValue(cleanedJson, AiExtractionResponse.class);
 
         } catch (Exception e) {
             log.error("[AI Failure] 상담 분석 중 오류 발생: {}", e.getMessage());
-            // 배치가 중단되지 않도록 커스텀 예외로 래핑하여 던집니다.
             throw new RuntimeException("AI 추출 실패: " + e.getMessage(), e);
         }
     }
@@ -100,7 +95,7 @@ public class GeminiExtractor {
                 Map.of("parts", List.of(Map.of("text", prompt)))
             ),
             "generationConfig", Map.of(
-                "temperature", 0.1, // 분석의 일관성을 위해 낮은 온도 설정
+                "temperature", 0.1,
                 "response_mime_type", "application/json"
             )
         );
@@ -108,23 +103,34 @@ public class GeminiExtractor {
 
     private String parseGeminiResponse(String response) throws Exception {
         JsonNode root = objectMapper.readTree(response);
-        JsonNode textNode = root.path("candidates")
-                .get(0)
-                .path("content")
-                .path("parts")
-                .get(0)
-                .path("text");
-
-        if (textNode.isMissingNode() || textNode.asText().isBlank()) {
-            throw new RuntimeException("Gemini 응답에서 분석 텍스트를 찾을 수 없습니다.");
-        }
         
-        return textNode.asText();
+        if (root.has("error")) {
+            String errMsg = root.path("error").path("message").asText();
+            throw new RuntimeException("Gemini API 서버 에러: " + errMsg);
+        }
+
+        // 사용량 메타데이터(토큰) 확인 및 상세 로그 출력 
+        JsonNode usage = root.path("usageMetadata");
+        if (!usage.isMissingNode()) {
+            int promptTokens = usage.path("promptTokenCount").asInt();      
+            int candidateTokens = usage.path("candidatesTokenCount").asInt(); 
+            int totalTokens = usage.path("totalTokenCount").asInt();          
+
+            log.info("[AI Usage - {}] 입력: {}, 출력(+사고): {}, 총합: {}", 
+                     MODEL_NAME, promptTokens, (totalTokens - promptTokens), totalTokens);
+        }
+
+        JsonNode candidates = root.path("candidates");
+        if (candidates.isMissingNode() || candidates.isEmpty()) {
+            throw new RuntimeException("Gemini가 답변을 생성하지 않았습니다. (안전 필터링 가능성)");
+        }
+
+        return candidates.get(0).path("content").path("parts").get(0).path("text").asText();
     }
 
     private String cleanJsonString(String raw) {
         if (raw == null || raw.isBlank()) return "{}";
-        return raw.replaceAll("(?s)^.*?\\{", "{")  // 처음 등장하는 { 앞의 모든 것 삭제
-                  .replaceAll("(?s)\\}.*?$", "}"); // 마지막 등장하는 } 뒤의 모든 것 삭제
+        return raw.replaceAll("(?s)^.*?\\{", "{") 
+                  .replaceAll("(?s)\\}.*?$", "}"); 
     }
 }
