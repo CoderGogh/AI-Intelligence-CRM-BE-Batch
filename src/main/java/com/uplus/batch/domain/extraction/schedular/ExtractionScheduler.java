@@ -48,7 +48,6 @@ public class ExtractionScheduler {
 
         for (ResultEventStatus task : pendingTasks) {
             try {
-                // 개별 작업 처리를 별도 메서드로 호출 (트랜잭션 분리 목적)
                 processIndividualTask(task);
             } catch (Exception e) {
                 log.error("[Critical Error] 상담 ID {} 처리 중 예상치 못한 시스템 오류: {}", task.getConsultId(), e.getMessage());
