@@ -1,5 +1,6 @@
 package com.uplus.batch.jobs.monthly_report.config;
 
+import com.uplus.batch.jobs.common.step.keyword.KeywordStatsTasklet;
 import com.uplus.batch.jobs.monthly_report.step.admin.MonthlySubscriptionStatsTasklet;
 import lombok.RequiredArgsConstructor;
 import org.springframework.batch.core.Job;
@@ -9,6 +10,7 @@ import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
 @Configuration
@@ -18,19 +20,27 @@ public class MonthlyReportConfig {
   private final JobRepository jobRepository;
   private final PlatformTransactionManager transactionManager;
   private final MonthlySubscriptionStatsTasklet monthlySubscriptionStatsTasklet;
+  private final MongoTemplate mongoTemplate;
 
   @Bean
   public Job monthlyAdminReportJob() {
     return new JobBuilder("monthlyAdminReportJob", jobRepository) //
         .start(monthlySubscriptionStatsStep())
+        .next(monthlyKeywordStatsStep())
         .build();
   }
 
   @Bean
   public Step monthlySubscriptionStatsStep() {
     return new StepBuilder("monthlySubscriptionStatsStep", jobRepository) //
-        .tasklet(monthlySubscriptionStatsTasklet, transactionManager) // transactionManager 추가 필요
+        .tasklet(monthlySubscriptionStatsTasklet, transactionManager)
         .build();
   }
 
+  @Bean
+  public Step monthlyKeywordStatsStep() {
+    return new StepBuilder("monthlyKeywordStatsStep", jobRepository)
+        .tasklet(new KeywordStatsTasklet(mongoTemplate, "monthly_report_snapshot"), transactionManager)
+        .build();
+  }
 }

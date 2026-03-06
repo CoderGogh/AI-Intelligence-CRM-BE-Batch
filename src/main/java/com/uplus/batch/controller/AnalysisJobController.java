@@ -23,14 +23,15 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class AnalysisJobController {
 
-	
     private final JobLauncher jobLauncher;
     private final Job customerRiskJob;
+    private final Job hourlyConsultJob;
     private final Job weeklyPerformanceJob;
     private final Job monthlyPerformanceJob;
 
     private final Job weeklyAdminReportJob; // 주별 전체 리포트 배치
     private final Job monthlyAdminReportJob; // 월별 리포트 Job 추가
+    private final Job dailyKeywordJob; // 일별 키워드 집계 Job
 
 
     /**
@@ -58,6 +59,38 @@ public class AnalysisJobController {
         jobLauncher.run(customerRiskJob, params);
 
         return ResponseEntity.ok("CustomerRisk job started (targetDate=" + targetDate + ")");
+    }
+
+    /**
+     * 시간대별 이슈 트렌드 집계 Job 실행
+     *
+     * @param targetDate 집계 대상 날짜 (yyyy-MM-dd). 생략 시 오늘.
+     * @param slot       시간대 슬롯 (09-12, 12-15, 15-18). 생략 시 현재 시간 기준 직전 슬롯.
+     *
+     * curl -X POST "http://localhost:8081/api/jobs/hourly-consult?targetDate=2026-03-03&slot=09-12"
+     */
+    @PostMapping("/hourly-consult")
+    public ResponseEntity<String> runHourlyConsult(
+            @RequestParam(required = false) String targetDate,
+            @RequestParam(required = false) String slot
+    ) throws Exception {
+
+        JobParametersBuilder builder = new JobParametersBuilder()
+                .addLong("runId", System.currentTimeMillis());
+
+        if (targetDate != null && !targetDate.isBlank()) {
+            builder.addString("targetDate", targetDate);
+        }
+        if (slot != null && !slot.isBlank()) {
+            builder.addString("slot", slot);
+        }
+
+        JobParameters params = builder.toJobParameters();
+
+        log.info("[AnalysisJob] hourlyConsultJob 수동 실행 요청 — targetDate={}, slot={}", targetDate, slot);
+        jobLauncher.run(hourlyConsultJob, params);
+
+        return ResponseEntity.ok("HourlyConsult job started (targetDate=" + targetDate + ", slot=" + slot + ")");
     }
 
     /**
@@ -116,19 +149,50 @@ public class AnalysisJobController {
 
 
     /**
-     * 주별 관리자 리포트 수동 실행
-     * curl -X GET "http://localhost:8081/api/jobs/run-weekly-batch"
+     * 일별 키워드 집계 Job 실행
+     * curl -X POST "http://localhost:8081/api/jobs/daily-keyword"
      */
-    @GetMapping("/run-weekly-batch")
-    public ResponseEntity<String> runWeeklyBatch() {
+    @PostMapping("/daily-keyword")
+    public ResponseEntity<String> runDailyKeyword() {
         try {
             JobParameters params = new JobParametersBuilder()
-                .addLong("time", System.currentTimeMillis())
+                .addLong("runId", System.currentTimeMillis())
                 .toJobParameters();
 
-            log.info("[AnalysisJob] weeklyAdminReportJob 수동 실행 요청");
+            log.info("[AnalysisJob] dailyKeywordJob 수동 실행 요청");
+            jobLauncher.run(dailyKeywordJob, params);
+            return ResponseEntity.ok("DailyKeyword job started");
+        } catch (Exception e) {
+            log.error("일별 키워드 배치 실행 중 오류 발생: ", e);
+            return ResponseEntity.internalServerError().body("배치 실행 실패: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 주별 관리자 리포트 수동 실행
+     * curl -X GET "http://localhost:8081/api/jobs/run-weekly-batch?startDate=2025-01-08&endDate=2025-01-15"
+     */
+    @GetMapping("/run-weekly-batch")
+    public ResponseEntity<String> runWeeklyBatch(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate
+    ) {
+        try {
+            JobParametersBuilder builder = new JobParametersBuilder()
+                .addLong("time", System.currentTimeMillis());
+
+            if (startDate != null && !startDate.isBlank()) {
+                builder.addString("startDate", startDate);
+            }
+            if (endDate != null && !endDate.isBlank()) {
+                builder.addString("endDate", endDate);
+            }
+
+            JobParameters params = builder.toJobParameters();
+
+            log.info("[AnalysisJob] weeklyAdminReportJob 수동 실행 요청 — startDate={}, endDate={}", startDate, endDate);
             jobLauncher.run(weeklyAdminReportJob, params);
-            return ResponseEntity.ok("주별 배치 실행 성공!");
+            return ResponseEntity.ok("주별 배치 실행 성공! (startDate=" + startDate + ", endDate=" + endDate + ")");
         } catch (Exception e) {
             log.error("주별 배치 실행 중 오류 발생: ", e);
             return ResponseEntity.internalServerError().body("배치 실행 실패: " + e.getMessage());
@@ -138,18 +202,29 @@ public class AnalysisJobController {
 
     /**
      * 월별 관리자 리포트 수동 실행
-     * curl -X GET "http://localhost:8081/api/jobs/run-monthly-batch"
+     * curl -X GET "http://localhost:8081/api/jobs/run-monthly-batch?startDate=2025-01-01&endDate=2025-01-31"
      */
     @GetMapping("/run-monthly-batch")
-    public ResponseEntity<String> runMonthlyBatch() {
+    public ResponseEntity<String> runMonthlyBatch(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate
+    ) {
         try {
-            JobParameters params = new JobParametersBuilder()
-                .addLong("time", System.currentTimeMillis())
-                .toJobParameters();
+            JobParametersBuilder builder = new JobParametersBuilder()
+                .addLong("time", System.currentTimeMillis());
 
-            log.info("[AnalysisJob] monthlyAdminReportJob 수동 실행 요청");
+            if (startDate != null && !startDate.isBlank()) {
+                builder.addString("startDate", startDate);
+            }
+            if (endDate != null && !endDate.isBlank()) {
+                builder.addString("endDate", endDate);
+            }
+
+            JobParameters params = builder.toJobParameters();
+
+            log.info("[AnalysisJob] monthlyAdminReportJob 수동 실행 요청 — startDate={}, endDate={}", startDate, endDate);
             jobLauncher.run(monthlyAdminReportJob, params);
-            return ResponseEntity.ok("월별 배치 실행 성공!");
+            return ResponseEntity.ok("월별 배치 실행 성공! (startDate=" + startDate + ", endDate=" + endDate + ")");
         } catch (Exception e) {
             log.error("월별 배치 실행 중 오류 발생: ", e);
             return ResponseEntity.internalServerError().body("배치 실행 실패: " + e.getMessage());

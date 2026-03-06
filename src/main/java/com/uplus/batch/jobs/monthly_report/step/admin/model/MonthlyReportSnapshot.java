@@ -16,6 +16,7 @@ public class MonthlyReportSnapshot {
   private LocalDateTime startAt;
   private LocalDateTime endAt;
   private SubscriptionAnalysis subscriptionAnalysis;
+  private Object keywordSummary;  // 키워드 분석 (topKeywords, longTermTopKeywords, byCustomerType)
 
   @Data
   public static class SubscriptionAnalysis {
