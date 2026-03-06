@@ -38,22 +38,23 @@ public class KeywordRankTasklet implements Tasklet {
 
     KeywordAggregator aggregator = new KeywordAggregator();
 
-    Consultation item;
+    try {
+      Consultation item;
 
-    while ((item = reader.read()) != null) {
+      while ((item = reader.read()) != null) {
+        String content = item.getContent();
+        if (content == null || content.length() < 2) {
+          continue;
+        }
 
-      String content = item.getContent();
-
-      if (content == null || content.length() < 2) {
-        continue;
+        // 에러 발생해도 finally 블록에서 reader 닫힘.
+        List<String> keywords = analyzeService.analyze(content);
+        aggregator.accumulate(keywords, item.getGradeCode());
       }
 
-      List<String> keywords = analyzeService.analyze(content);
-
-      aggregator.accumulate(keywords, item.getGradeCode());
+    } finally {
+      reader.close();
     }
-
-    reader.close();
 
     List<KeywordCount> topKeywords =
         aggregator.getTotalKeywordCount().entrySet().stream()
