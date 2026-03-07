@@ -36,7 +36,7 @@ class WeeklyAgentReportProcessorTest {
   @DisplayName("7일치 일별 데이터가 있을 때 -> 정상 합산 및 순위 재정렬 확인")
   void process_WeeklyAggregation_Success() {
     // 1. Given: 가짜 일별 데이터(DailyAgentReportSnapshot) 생성
-    String agentId = "101";
+    Long agentId = 101L;
 
     // 첫 번째 날: CODE_A(5건), CODE_B(3건)
     DailyAgentReportSnapshot day1 = DailyAgentReportSnapshot.builder()
@@ -89,7 +89,7 @@ class WeeklyAgentReportProcessorTest {
         eq(DailyAgentReportSnapshot.class)
     )).thenReturn(List.of());
 
-    WeeklyAgentReportSnapshot result = processor.process("999");
+    WeeklyAgentReportSnapshot result = processor.process(999L);
 
     assertThat(result).isNull();
   }
@@ -98,7 +98,7 @@ class WeeklyAgentReportProcessorTest {
   @Test
   void 주별_보고서_가중평균_계산_테스트() {
     // given
-    String agentId = "101";
+    Long agentId = 101L;
 
     // 카테고리 랭킹이 null이 되지 않도록 빈 리스트를 넣음.
     DailyAgentReportSnapshot day1 = DailyAgentReportSnapshot.builder()
@@ -134,7 +134,7 @@ class WeeklyAgentReportProcessorTest {
         .thenReturn(Collections.emptyList()); // 빈 리스트 반환
 
     // when
-    WeeklyAgentReportSnapshot result = processor.process("101");
+    WeeklyAgentReportSnapshot result = processor.process(101L);
 
     // then
     assertNull(result); // 에러 없이 null이 나오는지 확인
@@ -152,7 +152,7 @@ class WeeklyAgentReportProcessorTest {
         .thenReturn(List.of(day1));
 
     // when
-    WeeklyAgentReportSnapshot result = processor.process("101");
+    WeeklyAgentReportSnapshot result = processor.process(101L);
 
     // then
     assertEquals(0.0, result.getCustomerSatisfaction()); // 0으로 안전하게 떨어지는지 확인

@@ -23,7 +23,7 @@ public class DailyAgentReportSnapshot {
   @Id
   private String id;
 
-  private String agentId;      // 상담사 식별자 (ID)
+  private Long agentId;      // 상담사 식별자 (ID)
 
   private LocalDate startAt;   // 집계 시작 일자 (해당일 00:00:00)
 

@@ -27,7 +27,7 @@ public class WeeklyAgentReportSnapshot {
   private String id;
 
   @Indexed
-  private String agentId;      // 상담사 식별자
+  private Long agentId;      // 상담사 식별자
 
   private LocalDate startAt;   // 집계 시작 시각 (월요일 00:00)
   private LocalDate endAt;     // 집계 종료 시각 (일요일 23:59)

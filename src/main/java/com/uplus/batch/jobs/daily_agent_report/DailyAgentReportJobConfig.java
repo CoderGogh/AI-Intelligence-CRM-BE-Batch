@@ -37,22 +37,33 @@ public class DailyAgentReportJobConfig {
   @Bean
   public Step dailyAgentReportStep(JobRepository jobRepository) {
     return new StepBuilder("dailyAgentReportStep", jobRepository)
-        .<String, DailyAgentReportSnapshot>chunk(10, transactionManager) // 10명씩 처리
+        .<Long, DailyAgentReportSnapshot>chunk(10, transactionManager) // 10명씩 처리
         .reader(agentIdReader())
         .processor(dailyAgentReportProcessor)
         .writer(mongoSnapshotWriter())
         .build();
   }
 
-  @Bean
-  @StepScope // 실행 시점에 생성되도록 설정
-  public ItemReader<String> agentIdReader() {
-    List<String> agentIds = mongoTemplate.getCollection("consultation_summary")
-        .distinct("agent._id", Integer.class)
-        .into(new ArrayList<>())
-        .stream().map(String::valueOf).collect(Collectors.toList());
-    return new ListItemReader<>(agentIds);
-  }
+//  @Bean
+//  @StepScope // 실행 시점에 생성되도록 설정
+//  public ItemReader<String> agentIdReader() {
+//    List<String> agentIds = mongoTemplate.getCollection("consultation_summary")
+//        .distinct("agent._id", Integer.class)
+//        .into(new ArrayList<>())
+//        .stream().map(String::valueOf).collect(Collectors.toList());
+//    return new ListItemReader<>(agentIds);
+//  }
+@Bean
+@StepScope
+public ItemReader<Long> agentIdReader() { // 1. 반환 타입을 Long으로 변경
+  List<Long> agentIds = mongoTemplate.getCollection("consultation_summary")
+      .distinct("agent._id", Long.class) // 2. DB에서 Long 타입으로 추출
+      .into(new ArrayList<Long>())
+      .stream()
+      .collect(Collectors.toList()); // 3. String 변환 로직 삭제
+
+  return new ListItemReader<>(agentIds);
+}
 
   @Bean
   public ItemWriter<DailyAgentReportSnapshot> mongoSnapshotWriter() {

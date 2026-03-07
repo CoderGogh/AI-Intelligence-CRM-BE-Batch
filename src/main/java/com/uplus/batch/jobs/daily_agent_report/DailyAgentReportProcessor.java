@@ -27,12 +27,12 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 @StepScope
-public class DailyAgentReportProcessor implements ItemProcessor<String, DailyAgentReportSnapshot> {
+public class DailyAgentReportProcessor implements ItemProcessor<Long, DailyAgentReportSnapshot> {
 
   private final MongoTemplate mongoTemplate;
 
   @Override
-  public DailyAgentReportSnapshot process(String agentId) {
+  public DailyAgentReportSnapshot process(Long agentId) {
 
     // [테스트용] 2025-01-15 데이터로 고정
     LocalDate targetDate = LocalDate.of(2025, 1, 15);
@@ -61,12 +61,12 @@ public class DailyAgentReportProcessor implements ItemProcessor<String, DailyAge
 
 
   // 처리 카테고리별 건수 및 순위
-  private List<CategoryRanking> aggregateCategoryRanking(String agentId, LocalDate date) {
+  private List<CategoryRanking> aggregateCategoryRanking(Long agentId, LocalDate date) {
     LocalDateTime startDt = date.atStartOfDay();
     LocalDateTime endDt = date.atTime(LocalTime.MAX);
 
     MatchOperation match = Aggregation.match(
-        Criteria.where("agent._id").is(Integer.parseInt(agentId))
+        Criteria.where("agent._id").is(agentId)
             .and("consultedAt").gte(startDt).lte(endDt)
     );
 
@@ -95,12 +95,12 @@ public class DailyAgentReportProcessor implements ItemProcessor<String, DailyAge
 
 
   // 전체 상담 성과(처리건수, 소요시간, 고객만족도)
-  private DailyMetrics aggregateDailyMetrics(String agentId, LocalDate date) {
+  private DailyMetrics aggregateDailyMetrics(Long agentId, LocalDate date) {
     LocalDateTime start = date.atStartOfDay();
     LocalDateTime end = date.atTime(LocalTime.MAX);
 
     Aggregation aggregation = Aggregation.newAggregation(
-        Aggregation.match(Criteria.where("agent._id").is(Integer.parseInt(agentId))
+        Aggregation.match(Criteria.where("agent._id").is(agentId)
             .and("consultedAt").gte(start).lte(end)),
 
         Aggregation.group("agent._id")

@@ -20,12 +20,12 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 @StepScope
-public class WeeklyAgentReportProcessor implements ItemProcessor<String, WeeklyAgentReportSnapshot> {
+public class WeeklyAgentReportProcessor implements ItemProcessor<Long, WeeklyAgentReportSnapshot> {
 
   private final MongoTemplate mongoTemplate;
 
   @Override
-  public WeeklyAgentReportSnapshot process(String agentId) {
+  public WeeklyAgentReportSnapshot process(Long agentId) {
     // [테스트용] 지난주 월요일 ~ 일요일 고정 (2025-01-13 ~ 2025-01-19)
     LocalDate startAt = LocalDate.of(2025, 1, 13);
     LocalDate endAt = LocalDate.of(2025, 1, 19);

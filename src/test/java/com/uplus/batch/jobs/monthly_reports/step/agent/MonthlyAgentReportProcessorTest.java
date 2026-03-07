@@ -38,7 +38,7 @@ class MonthlyAgentReportProcessorTest {
   @DisplayName("한 달치 일별 데이터 합산 및 엔티티 생성 테스트")
   void process_MonthlyAggregation_Success() {
     // 1. Given: 테스트용 상담사 ID와 일별 데이터 준비
-    String agentId = "agent-001";
+    Long agentId = 101L;
 
     // 1월 1일 데이터: 요금조회(10건)
     DailyAgentReportSnapshot day1 = DailyAgentReportSnapshot.builder()
@@ -91,7 +91,8 @@ class MonthlyAgentReportProcessorTest {
         eq(DailyAgentReportSnapshot.class)
     )).thenReturn(List.of());
 
-    MonthlyAgentReportSnapshot result = processor.process("unknown-agent");
+    // ID를 숫자로 변경
+    MonthlyAgentReportSnapshot result = processor.process(999L);
 
     assertThat(result).isNull();
   }
@@ -101,7 +102,7 @@ class MonthlyAgentReportProcessorTest {
   @DisplayName("월별 보고서 가중평균 및 만족도 집계 테스트")
   void 월별_보고서_지표_계산_테스트() {
     // given
-    String agentId = "101";
+    Long agentId = 101L;
 
     // 1월 1일 데이터 (10건, 만족도 4.0)
     DailyAgentReportSnapshot day1 = DailyAgentReportSnapshot.builder()
@@ -139,12 +140,15 @@ class MonthlyAgentReportProcessorTest {
   @Test
   @DisplayName("해당 월에 일별 데이터가 없는 경우 null 반환 테스트")
   void 월별_데이터_부재_테스트() {
+
+    Long agentId = 101L;
+
     // given
     when(mongoTemplate.find(any(Query.class), eq(DailyAgentReportSnapshot.class)))
         .thenReturn(Collections.emptyList());
 
     // when
-    MonthlyAgentReportSnapshot result = processor.process("101");
+    MonthlyAgentReportSnapshot result = processor.process(agentId);
 
     // then
     assertNull(result);

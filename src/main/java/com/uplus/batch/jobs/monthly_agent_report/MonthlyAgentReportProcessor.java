@@ -21,12 +21,12 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @StepScope
 public class MonthlyAgentReportProcessor implements
-    ItemProcessor<String, MonthlyAgentReportSnapshot> {
+    ItemProcessor<Long, MonthlyAgentReportSnapshot> {
 
   private final MongoTemplate mongoTemplate;
 
   @Override
-  public MonthlyAgentReportSnapshot process(String agentId) {
+  public MonthlyAgentReportSnapshot process(Long agentId) {
     // [테스트용] 2025년 1월 데이터 집계 (1일 ~ 31일)
     LocalDate startAt = LocalDate.of(2025, 1, 1);
     LocalDate endAt = LocalDate.of(2025, 1, 31);
