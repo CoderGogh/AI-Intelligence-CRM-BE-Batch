@@ -1,13 +1,7 @@
 package com.uplus.batch.domain.summary.repository;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.uplus.batch.domain.summary.dto.ConsultProductLogSyncRow;
-import com.uplus.batch.domain.summary.dto.ConsultationResultSyncRow;
-import com.uplus.batch.domain.summary.dto.CustomerReviewRow;
-import com.uplus.batch.domain.summary.dto.RawTextRow;
-import com.uplus.batch.domain.summary.dto.RetentionAnalysisRow;
-import com.uplus.batch.domain.summary.dto.RiskFlagRow;
-import com.uplus.batch.domain.summary.dto.SummaryEventStatusRow;
+import com.uplus.batch.domain.summary.dto.*;
 import com.uplus.batch.domain.summary.enums.SummaryEventStatus;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
@@ -24,29 +18,25 @@ import org.springframework.stereotype.Repository;
 public class SummaryEventStatusRepository {
 
   private final JdbcTemplate jdbcTemplate;
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
   private final RowMapper<ConsultationResultSyncRow> consultationResultRowMapper = (rs, rowNum) ->
       new ConsultationResultSyncRow(
-
           rs.getLong("consult_id"),
           rs.getTimestamp("created_at").toLocalDateTime(),
           rs.getString("channel"),
           rs.getInt("duration_sec"),
-
           rs.getString("iam_issue"),
           rs.getString("iam_action"),
           rs.getString("iam_memo"),
-
           rs.getLong("emp_id"),
           rs.getString("employee_name"),
-
           rs.getLong("customer_id"),
           rs.getString("customer_name"),
           rs.getString("customer_phone"),
           rs.getString("age_group"),
           rs.getString("grade_code"),
           rs.getString("customer_type"),
-
           rs.getString("category_code"),
           rs.getString("large_category"),
           rs.getString("medium_category"),
@@ -60,14 +50,20 @@ public class SummaryEventStatusRepository {
   ) {
 
     String sql = """
-        SELECT id, consult_id, retry_count
-        FROM summary_event_status
-        WHERE status = ?
-          AND id > ?
-          AND created_at < ?
-        ORDER BY id
-        LIMIT ?
-        """;
+      SELECT
+          s.id,
+          s.consult_id,
+          s.retry_count
+      FROM summary_event_status s
+      JOIN result_event_status r
+        ON r.consult_id = s.consult_id
+       AND r.status = 'COMPLETED'
+      WHERE s.status = ?
+        AND s.id > ?
+        AND s.created_at < ?
+      ORDER BY s.id
+      LIMIT ?
+      """;
 
     return jdbcTemplate.query(
         sql,
@@ -83,17 +79,11 @@ public class SummaryEventStatusRepository {
     );
   }
 
-  public Map<Long, ConsultationResultSyncRow> findConsultationResultsByConsultIds(
-      List<Long> consultIds
-  ) {
+  public Map<Long, ConsultationResultSyncRow> findConsultationResultsByConsultIds(List<Long> consultIds) {
 
-    if (consultIds.isEmpty()) {
-      return Map.of();
-    }
+    if (consultIds == null || consultIds.isEmpty()) return Map.of();
 
-    String inSql = consultIds.stream()
-        .map(id -> "?")
-        .collect(Collectors.joining(","));
+    String inSql = consultIds.stream().map(id -> "?").collect(Collectors.joining(","));
 
     String sql = """
         SELECT
@@ -129,37 +119,28 @@ public class SummaryEventStatusRepository {
             cat.small_category
 
         FROM consultation_results r
-
-        LEFT JOIN employees e
-            ON r.emp_id = e.emp_id
-
-        LEFT JOIN customers c
-            ON r.customer_id = c.customer_id
-
-        LEFT JOIN consultation_category_policy cat
-            ON r.category_code = cat.category_code
-
+        LEFT JOIN employees e ON r.emp_id = e.emp_id
+        LEFT JOIN customers c ON r.customer_id = c.customer_id
+        LEFT JOIN consultation_category_policy cat ON r.category_code = cat.category_code
         WHERE r.consult_id IN (%s)
         """.formatted(inSql);
 
-    List<ConsultationResultSyncRow> rows = jdbcTemplate.query(
-        sql,
-        consultationResultRowMapper,
-        consultIds.toArray()
-    );
+    List<ConsultationResultSyncRow> rows =
+        jdbcTemplate.query(sql, consultationResultRowMapper, consultIds.toArray(new Object[0]));
 
     return rows.stream()
         .collect(Collectors.toMap(
             ConsultationResultSyncRow::consultId,
-            r -> r
+            r -> r,
+            (a,b)->a
         ));
   }
 
   public Map<Long, List<ConsultProductLogSyncRow>> findConsultProductLogs(List<Long> consultIds) {
 
-    String inSql = consultIds.stream()
-        .map(id -> "?")
-        .collect(Collectors.joining(","));
+    if (consultIds == null || consultIds.isEmpty()) return Map.of();
+
+    String inSql = consultIds.stream().map(id -> "?").collect(Collectors.joining(","));
 
     String sql = """
       SELECT
@@ -177,27 +158,27 @@ public class SummaryEventStatusRepository {
         AND deleted_at IS NULL
       """.formatted(inSql);
 
-    List<ConsultProductLogSyncRow> rows = jdbcTemplate.query(
-        sql,
-        (rs, rowNum) -> new ConsultProductLogSyncRow(
-            rs.getLong("consult_id"),
-            rs.getString("contract_type"),
-            rs.getString("product_type"),
-            rs.getString("new_product_home"),
-            rs.getString("new_product_mobile"),
-            rs.getString("new_product_service"),
-            rs.getString("canceled_product_home"),
-            rs.getString("canceled_product_mobile"),
-            rs.getString("canceled_product_service")
-        ),
-        consultIds.toArray()
-    );
+    List<ConsultProductLogSyncRow> rows =
+        jdbcTemplate.query(sql, (rs, rowNum) ->
+            new ConsultProductLogSyncRow(
+                rs.getLong("consult_id"),
+                rs.getString("contract_type"),
+                rs.getString("product_type"),
+                rs.getString("new_product_home"),
+                rs.getString("new_product_mobile"),
+                rs.getString("new_product_service"),
+                rs.getString("canceled_product_home"),
+                rs.getString("canceled_product_mobile"),
+                rs.getString("canceled_product_service")
+            ), consultIds.toArray(new Object[0]));
 
     return rows.stream()
         .collect(Collectors.groupingBy(ConsultProductLogSyncRow::consultId));
   }
 
   public Map<Long, List<String>> findRiskFlags(List<Long> consultIds) {
+
+    if (consultIds == null || consultIds.isEmpty()) return Map.of();
 
     String inSql = consultIds.stream().map(i -> "?").collect(Collectors.joining(","));
 
@@ -207,14 +188,11 @@ public class SummaryEventStatusRepository {
         WHERE consult_id IN (%s)
         """.formatted(inSql);
 
-    List<RiskFlagRow> rows = jdbcTemplate.query(
-        sql,
-        (rs, rowNum) -> new RiskFlagRow(
+    List<RiskFlagRow> rows =
+        jdbcTemplate.query(sql, (rs,rowNum)->new RiskFlagRow(
             rs.getLong("consult_id"),
             rs.getString("type_code")
-        ),
-        consultIds.toArray()
-    );
+        ), consultIds.toArray(new Object[0]));
 
     return rows.stream()
         .collect(Collectors.groupingBy(
@@ -224,6 +202,8 @@ public class SummaryEventStatusRepository {
   }
 
   public Map<Long, RetentionAnalysisRow> findRetentionAnalysis(List<Long> consultIds) {
+
+    if (consultIds == null || consultIds.isEmpty()) return Map.of();
 
     String inSql = consultIds.stream().map(i -> "?").collect(Collectors.joining(","));
 
@@ -240,18 +220,16 @@ public class SummaryEventStatusRepository {
         WHERE consult_id IN (%s)
         """.formatted(inSql);
 
-    ObjectMapper mapper = new ObjectMapper();
-
-    List<RetentionAnalysisRow> rows = jdbcTemplate.query(sql, (rs, rowNum) -> {
+    List<RetentionAnalysisRow> rows = jdbcTemplate.query(sql, (rs,rowNum)->{
 
       List<String> actions = null;
 
       try {
         String json = rs.getString("defense_actions");
-        if (json != null) {
-          actions = mapper.readValue(json, List.class);
+        if(json!=null){
+          actions = objectMapper.readValue(json,List.class);
         }
-      } catch (Exception ignored) {}
+      } catch(Exception ignored){}
 
       return new RetentionAnalysisRow(
           rs.getLong("consult_id"),
@@ -262,15 +240,20 @@ public class SummaryEventStatusRepository {
           rs.getString("complaint_reason"),
           rs.getString("raw_summary")
       );
-    }, consultIds.toArray());
 
-    return rows.stream().collect(Collectors.toMap(
-        RetentionAnalysisRow::consultId,
-        r -> r
-    ));
+    }, consultIds.toArray(new Object[0]));
+
+    return rows.stream()
+        .collect(Collectors.toMap(
+            RetentionAnalysisRow::consultId,
+            r->r,
+            (a,b)->a
+        ));
   }
 
   public Map<Long, CustomerReviewRow> findCustomerReviews(List<Long> consultIds) {
+
+    if (consultIds == null || consultIds.isEmpty()) return Map.of();
 
     String inSql = consultIds.stream().map(i -> "?").collect(Collectors.joining(","));
 
@@ -286,26 +269,27 @@ public class SummaryEventStatusRepository {
         WHERE consult_id IN (%s)
         """.formatted(inSql);
 
-    List<CustomerReviewRow> rows = jdbcTemplate.query(
-        sql,
-        (rs, rowNum) -> new CustomerReviewRow(
+    List<CustomerReviewRow> rows =
+        jdbcTemplate.query(sql,(rs,rowNum)->new CustomerReviewRow(
             rs.getLong("consult_id"),
             rs.getInt("score_1"),
             rs.getInt("score_2"),
             rs.getInt("score_3"),
             rs.getInt("score_4"),
             rs.getInt("score_5")
-        ),
-        consultIds.toArray()
-    );
+        ), consultIds.toArray(new Object[0]));
 
-    return rows.stream().collect(Collectors.toMap(
-        CustomerReviewRow::consultId,
-        r -> r
-    ));
+    return rows.stream()
+        .collect(Collectors.toMap(
+            CustomerReviewRow::consultId,
+            r->r,
+            (a,b)->a
+        ));
   }
 
   public Map<Long, RawTextRow> findRawTexts(List<Long> consultIds) {
+
+    if (consultIds == null || consultIds.isEmpty()) return Map.of();
 
     String inSql = consultIds.stream().map(i -> "?").collect(Collectors.joining(","));
 
@@ -315,40 +299,37 @@ public class SummaryEventStatusRepository {
         WHERE consult_id IN (%s)
         """.formatted(inSql);
 
-    List<RawTextRow> rows = jdbcTemplate.query(
-        sql,
-        (rs, rowNum) -> new RawTextRow(
+    List<RawTextRow> rows =
+        jdbcTemplate.query(sql,(rs,rowNum)->new RawTextRow(
             rs.getLong("consult_id"),
             rs.getString("raw_text_json")
-        ),
-        consultIds.toArray()
-    );
+        ), consultIds.toArray(new Object[0]));
 
-    return rows.stream().collect(Collectors.toMap(
-        RawTextRow::consultId,
-        r -> r
-    ));
+    return rows.stream()
+        .collect(Collectors.toMap(
+            RawTextRow::consultId,
+            r->r,
+            (a,b)->a
+        ));
   }
 
   public void markCompletedBatch(List<Long> ids) {
 
-    if (ids.isEmpty()) return;
+    if (ids==null || ids.isEmpty()) return;
 
     String sql = """
         UPDATE summary_event_status
         SET status = 'COMPLETED',
             updated_at = NOW()
         WHERE id IN (%s)
-        """.formatted(
-        ids.stream().map(id -> "?").collect(Collectors.joining(","))
-    );
+        """.formatted(ids.stream().map(i->"?").collect(Collectors.joining(",")));
 
-    jdbcTemplate.update(sql, ids.toArray());
+    jdbcTemplate.update(sql, ids.toArray(new Object[0]));
   }
 
   public void markRetryBatch(List<Long> ids) {
 
-    if (ids.isEmpty()) return;
+    if (ids==null || ids.isEmpty()) return;
 
     String sql = """
         UPDATE summary_event_status
@@ -356,16 +337,14 @@ public class SummaryEventStatusRepository {
             status = 'REQUESTED',
             updated_at = NOW()
         WHERE id IN (%s)
-        """.formatted(
-        ids.stream().map(id -> "?").collect(Collectors.joining(","))
-    );
+        """.formatted(ids.stream().map(i->"?").collect(Collectors.joining(",")));
 
-    jdbcTemplate.update(sql, ids.toArray());
+    jdbcTemplate.update(sql, ids.toArray(new Object[0]));
   }
 
   public void markFailedBatch(List<Long> ids) {
 
-    if (ids.isEmpty()) return;
+    if (ids==null || ids.isEmpty()) return;
 
     String sql = """
         UPDATE summary_event_status
@@ -373,10 +352,8 @@ public class SummaryEventStatusRepository {
             status = 'FAILED',
             updated_at = NOW()
         WHERE id IN (%s)
-        """.formatted(
-        ids.stream().map(id -> "?").collect(Collectors.joining(","))
-    );
+        """.formatted(ids.stream().map(i->"?").collect(Collectors.joining(",")));
 
-    jdbcTemplate.update(sql, ids.toArray());
+    jdbcTemplate.update(sql, ids.toArray(new Object[0]));
   }
 }

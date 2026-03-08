@@ -158,6 +158,7 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
                 .name(row.customerName())
                 .ageGroup(row.ageGroup())
                 .grade(row.customerGrade())
+                .satisfiedScore(calculateScore(review))
                 .build()
         )
         .set("category",
@@ -167,7 +168,14 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
                 .medium(row.categoryMedium())
                 .small(row.categorySmall())
                 .build()
-        )      .set("riskFlags", riskFlags)
+        )
+        .set("riskFlags", riskFlags)
+        .set("summary",
+            retention == null ? null :
+                ConsultationSummary.Summary.builder()
+                    .content(retention.rawSummary())
+                    .build()
+        )
         .set("cancellation",
             retention == null ? null :
                 ConsultationSummary.Cancellation.builder()
@@ -176,9 +184,8 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
                     .defenseSuccess(retention.defenseSuccess())
                     .defenseActions(retention.defenseActions())
                     .complaintReasons(retention.complaintReason())
-                    .build())
-
-        .set("customer.satisfiedScore", calculateScore(review))
+                    .build()
+        )
         .set("resultProducts", resultProducts)
         .setOnInsert("createdAt", LocalDateTime.now());
   }
