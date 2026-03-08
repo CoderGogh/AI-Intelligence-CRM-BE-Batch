@@ -17,6 +17,7 @@ public class WeeklyReportSnapshot {
   private LocalDateTime endAt;     // 집계 종료일
 
   private SubscriptionAnalysis subscriptionAnalysis;
+  private Object keywordSummary;  // 키워드 분석 (topKeywords, longTermTopKeywords, byCustomerType)
 
   @Data
   public static class SubscriptionAnalysis {

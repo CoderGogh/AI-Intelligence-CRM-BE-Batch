@@ -13,7 +13,6 @@ spring:
   data:
     mongodb:
       uri: mongodb://localhost:27018/crm
-
     redis:
       host: localhost
       port: 6380
@@ -35,3 +34,7 @@ app:
   summary-sync:
     cron: "0 * * * * *"
     batch-size: 100
+  
+gemini:
+  api:
+    key: ${GEMINI_API_KEY}
