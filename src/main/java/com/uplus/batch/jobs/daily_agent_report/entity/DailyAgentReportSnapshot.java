@@ -54,9 +54,15 @@ public class DailyAgentReportSnapshot {
   @NoArgsConstructor
   @AllArgsConstructor
   @Builder
-  public static class QualityAnalysis { // 응대 품질 기능 구현할 때 보완필요
-    private int greetingCount;       // 인사말 포함 건수
-    private double greetingRate;     // 인사말 포함 비율 (%)
-    private int empathyExpressionCount; // 공감 표현 총 횟수
+  public static class QualityAnalysis {
+    private long empathyCount;            // 공감 표현 등장 총 횟수
+    private double avgEmpathyPerConsult;  // 건당 평균 공감 횟수
+    private double apologyRate;           // 사과 표현 포함 비율 (%)
+    private double closingRate;           // 마무리 멘트 포함 비율 (%)
+    private double courtesyRate;          // 친절 표현 포함 비율 (%)
+    private double promptnessRate;        // 신속 응대 표현 포함 비율 (%)
+    private double accuracyRate;          // 정확 응대 표현 포함 비율 (%)
+    private double waitingGuideRate;      // 대기 안내 포함 비율 (%)
+    private double totalScore;            // 종합 점수 (0~5)
   }
 }

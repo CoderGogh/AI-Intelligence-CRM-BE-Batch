@@ -2,6 +2,7 @@ package com.uplus.batch.jobs.monthly_agent_report;
 
 import com.uplus.batch.jobs.daily_agent_report.entity.CategoryRanking;
 import com.uplus.batch.jobs.daily_agent_report.entity.DailyAgentReportSnapshot;
+import com.uplus.batch.jobs.daily_agent_report.entity.DailyAgentReportSnapshot.QualityAnalysis;
 import com.uplus.batch.jobs.monthly_agent_report.entity.MonthlyAgentReportSnapshot;
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -17,6 +19,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Component;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 @StepScope
@@ -24,6 +27,15 @@ public class MonthlyAgentReportProcessor implements
     ItemProcessor<Long, MonthlyAgentReportSnapshot> {
 
   private final MongoTemplate mongoTemplate;
+
+  // totalScore 가중치 (DailyAgentReportProcessor와 동일)
+  private static final double W_EMPATHY = 0.20;
+  private static final double W_APOLOGY = 0.15;
+  private static final double W_CLOSING = 0.20;
+  private static final double W_COURTESY = 0.10;
+  private static final double W_PROMPTNESS = 0.10;
+  private static final double W_ACCURACY = 0.10;
+  private static final double W_WAITING = 0.15;
 
   @Override
   public MonthlyAgentReportSnapshot process(Long agentId) {
@@ -80,15 +92,95 @@ public class MonthlyAgentReportProcessor implements
       sortedRankings.get(i).setRank(i + 1);
     }
 
-    // 5. 월별 결과 생성
+    // 5. 응대 품질 합산 (일별 → 월별 가중 평균)
+    MonthlyAgentReportSnapshot.QualityAnalysis monthlyQuality =
+        aggregateQuality(dailySnapshots, totalConsultCount);
+
+    // 6. 월별 결과 생성
     return MonthlyAgentReportSnapshot.builder()
         .agentId(agentId)
         .startAt(startAt)
         .endAt(endAt)
         .consultCount(totalConsultCount)
-        .avgDurationMinutes(monthlyAvgDuration) // 주간 가중 평균 소요 시간
-        .customerSatisfaction(monthlyAvgSatisfaction) // 주간 가중 평균 만족도
+        .avgDurationMinutes(monthlyAvgDuration)
+        .customerSatisfaction(monthlyAvgSatisfaction)
         .categoryRanking(sortedRankings)
+        .qualityAnalysis(monthlyQuality)
         .build();
+  }
+
+  /**
+   * 일별 QualityAnalysis를 합산하여 월별 품질 메트릭을 계산한다.
+   * 비율 항목은 상담 건수 기준 가중 평균으로 산출.
+   */
+  private MonthlyAgentReportSnapshot.QualityAnalysis aggregateQuality(
+      List<DailyAgentReportSnapshot> dailySnapshots, long totalConsultCount) {
+
+    List<DailyAgentReportSnapshot> withQuality = dailySnapshots.stream()
+        .filter(d -> d.getQualityAnalysis() != null)
+        .collect(Collectors.toList());
+
+    if (withQuality.isEmpty() || totalConsultCount == 0) {
+      return null;
+    }
+
+    long totalEmpathy = 0;
+    double weightedApology = 0, weightedClosing = 0, weightedCourtesy = 0;
+    double weightedPromptness = 0, weightedAccuracy = 0, weightedWaiting = 0;
+    long qualityConsultCount = 0;
+
+    for (DailyAgentReportSnapshot day : withQuality) {
+      QualityAnalysis q = day.getQualityAnalysis();
+      long dayCount = day.getConsultCount();
+      qualityConsultCount += dayCount;
+
+      totalEmpathy += q.getEmpathyCount();
+      weightedApology += q.getApologyRate() * dayCount;
+      weightedClosing += q.getClosingRate() * dayCount;
+      weightedCourtesy += q.getCourtesyRate() * dayCount;
+      weightedPromptness += q.getPromptnessRate() * dayCount;
+      weightedAccuracy += q.getAccuracyRate() * dayCount;
+      weightedWaiting += q.getWaitingGuideRate() * dayCount;
+    }
+
+    if (qualityConsultCount == 0) return null;
+
+    double apologyRate = round1(weightedApology / qualityConsultCount);
+    double closingRate = round1(weightedClosing / qualityConsultCount);
+    double courtesyRate = round1(weightedCourtesy / qualityConsultCount);
+    double promptnessRate = round1(weightedPromptness / qualityConsultCount);
+    double accuracyRate = round1(weightedAccuracy / qualityConsultCount);
+    double waitingGuideRate = round1(weightedWaiting / qualityConsultCount);
+    double avgEmpathy = round1((double) totalEmpathy / qualityConsultCount);
+
+    double empathyScore = Math.min(avgEmpathy / 3.0, 1.0);
+    double totalScore = round1(
+        (empathyScore * W_EMPATHY
+            + apologyRate / 100.0 * W_APOLOGY
+            + closingRate / 100.0 * W_CLOSING
+            + courtesyRate / 100.0 * W_COURTESY
+            + promptnessRate / 100.0 * W_PROMPTNESS
+            + accuracyRate / 100.0 * W_ACCURACY
+            + waitingGuideRate / 100.0 * W_WAITING) * 5.0);
+
+    MonthlyAgentReportSnapshot.QualityAnalysis result = new MonthlyAgentReportSnapshot.QualityAnalysis();
+    result.setEmpathyCount(totalEmpathy);
+    result.setAvgEmpathyPerConsult(avgEmpathy);
+    result.setApologyRate(apologyRate);
+    result.setClosingRate(closingRate);
+    result.setCourtesyRate(courtesyRate);
+    result.setPromptnessRate(promptnessRate);
+    result.setAccuracyRate(accuracyRate);
+    result.setWaitingGuideRate(waitingGuideRate);
+    result.setTotalScore(totalScore);
+
+    log.info("[MonthlyQuality] agent={} — 공감 {}회, 사과 {}%, 총점 {}",
+        withQuality.get(0).getAgentId(), totalEmpathy, apologyRate, totalScore);
+
+    return result;
+  }
+
+  private double round1(double value) {
+    return Math.round(value * 10.0) / 10.0;
   }
 }
