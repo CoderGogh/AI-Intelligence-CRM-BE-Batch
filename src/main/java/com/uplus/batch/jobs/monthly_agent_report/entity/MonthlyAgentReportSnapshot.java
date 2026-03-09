@@ -52,7 +52,6 @@ public class MonthlyAgentReportSnapshot {
 
   @Data
   public static class QualityAnalysis {
-<<<<<<< feat/CV4-80
     private long empathyCount;            // 공감 표현 등장 총 횟수
     private double avgEmpathyPerConsult;  // 건당 평균 공감 횟수
     private double apologyRate;           // 사과 표현 포함 비율 (%)
@@ -62,16 +61,6 @@ public class MonthlyAgentReportSnapshot {
     private double accuracyRate;          // 정확 응대 표현 포함 비율 (%)
     private double waitingGuideRate;      // 대기 안내 포함 비율 (%)
     private double totalScore;            // 종합 점수 (0~5)
-=======
-    private long greetingCount;           // 인사말 포함 상담 건수
-    private double greetingRate;          // 인사말 포함 비율(%)
-    private long empathyExpressionCount;  // 공감 표현 총 횟수
-    private double avgEmpathyPerConsult;  // 상담 1건당 평균 공감 표현 횟수
-    private double personalizationRate;   // 고객 이름 포함 응대 비율(%)
-    private double closingRate;           // 마무리 멘트 포함 비율(%)
-    private double waitingGuideRate;      // 대기 안내 포함 비율(%)
-    private double totalScore;            // 응대 품질 종합 점수 (0~5)
->>>>>>> develop
   }
 
   @Data

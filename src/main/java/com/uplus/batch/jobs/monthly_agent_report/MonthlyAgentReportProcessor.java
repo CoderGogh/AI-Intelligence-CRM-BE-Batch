@@ -116,18 +116,13 @@ public class MonthlyAgentReportProcessor implements
         .startAt(startAt)
         .endAt(endAt)
         .consultCount(totalConsultCount)
-<<<<<<< feat/CV4-80
         .avgDurationMinutes(monthlyAvgDuration)
-        .customerSatisfaction(monthlyAvgSatisfaction)
-=======
-        .avgDurationMinutes(monthlyAvgDuration) // 주간 가중 평균 소요 시간
         .customerSatisfactionAnalysis(
             MonthlyAgentReportSnapshot.CustomerSatisfactionAnalysis.builder()
                 .satisfactionScore(monthlyAvgSatisfaction)
                 .responseRate(monthlyAvgResponseRate)
                 .build()
         )
->>>>>>> develop
         .categoryRanking(sortedRankings)
         .qualityAnalysis(monthlyQuality)
         .build();

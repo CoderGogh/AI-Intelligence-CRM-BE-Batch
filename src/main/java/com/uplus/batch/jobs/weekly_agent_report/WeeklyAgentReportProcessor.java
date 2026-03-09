@@ -95,16 +95,12 @@ public class WeeklyAgentReportProcessor implements ItemProcessor<Long, WeeklyAge
       }
     }
 
-<<<<<<< feat/CV4-80
-    // 3. 최종 평균 지표 산출
-=======
     // 주간 평균 응답률 산출
     double weeklyAvgResponseRate = totalSurveyTotalCount > 0
         ? (double) totalSurveyResponseCount / totalSurveyTotalCount * 100.0
         : 0;
 
-    // 3. 최종 평균 지표 산출 (전체 건수로 나눔)
->>>>>>> develop
+    // 3. 최종 평균 지표 산출
     double weeklyAvgDuration = totalConsultCount > 0 ? totalDurationSum / totalConsultCount : 0;
     double weeklyAvgSatisfaction = totalConsultCount > 0 ? totalSatisfactionSum / totalConsultCount : 0;
 
@@ -130,19 +126,14 @@ public class WeeklyAgentReportProcessor implements ItemProcessor<Long, WeeklyAge
         .startAt(startAt)
         .endAt(endAt)
         .consultCount(totalConsultCount)
-<<<<<<< feat/CV4-80
         .avgDurationMinutes(weeklyAvgDuration)
-        .customerSatisfaction(weeklyAvgSatisfaction)
-=======
-        .avgDurationMinutes(weeklyAvgDuration) // 주간 가중 평균 소요 시간
-        .iamKeywordMatchAnalysis(weeklyIamMatchRate) // 최종 주간 일치율 반영
+        .iamKeywordMatchAnalysis(weeklyIamMatchRate)
         .customerSatisfactionAnalysis(
             WeeklyAgentReportSnapshot.CustomerSatisfactionAnalysis.builder()
-                .satisfactionScore(weeklyAvgSatisfaction) // 주간 평균 만족도 점수
-                .responseRate(weeklyAvgResponseRate)    // 주간 평균 응답률
+                .satisfactionScore(weeklyAvgSatisfaction)
+                .responseRate(weeklyAvgResponseRate)
                 .build()
         )
->>>>>>> develop
         .categoryRanking(sortedRankings)
         .qualityAnalysis(weeklyQuality)
         .build();
