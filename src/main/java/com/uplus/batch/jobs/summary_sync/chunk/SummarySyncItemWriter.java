@@ -227,6 +227,7 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
                 .name(row.customerName())
                 .ageGroup(row.ageGroup())
                 .grade(row.customerGrade())
+                .gender(row.customerGender())
                 .satisfiedScore(calculateScore(review))
                 .build())
         .set(

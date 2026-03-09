@@ -20,6 +20,7 @@ public record ConsultationResultSyncRow(
     String ageGroup,
     String customerGrade,
     String customerType,
+    String customerGender,
 
     String categoryCode,
     String categoryLarge,

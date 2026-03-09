@@ -37,6 +37,7 @@ public class SummaryEventStatusRepository {
           rs.getString("age_group"),
           rs.getString("grade_code"),
           rs.getString("customer_type"),
+          rs.getString("gender"),
           rs.getString("category_code"),
           rs.getString("large_category"),
           rs.getString("medium_category"),
@@ -103,6 +104,7 @@ public class SummaryEventStatusRepository {
             c.phone AS customer_phone,
             c.customer_type,
             c.grade_code,
+            c.gender,
 
             CASE
                 WHEN TIMESTAMPDIFF(YEAR, c.birth_date, CURDATE()) < 20 THEN '10대'
