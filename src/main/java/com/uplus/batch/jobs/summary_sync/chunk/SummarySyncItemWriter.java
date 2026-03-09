@@ -1,19 +1,12 @@
 package com.uplus.batch.jobs.summary_sync.chunk;
 
-import com.uplus.batch.domain.summary.dto.ConsultProductLogSyncRow;
-import com.uplus.batch.domain.summary.dto.ConsultationResultSyncRow;
-import com.uplus.batch.domain.summary.dto.CustomerReviewRow;
-import com.uplus.batch.domain.summary.dto.RawTextRow;
-import com.uplus.batch.domain.summary.dto.RetentionAnalysisRow;
-import com.uplus.batch.domain.summary.dto.SummaryEventStatusRow;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.uplus.batch.domain.summary.dto.*;
 import com.uplus.batch.domain.summary.entity.ConsultationSummary;
 import com.uplus.batch.domain.summary.entity.ConsultationSummary.ResultProducts;
 import com.uplus.batch.domain.summary.repository.SummaryEventStatusRepository;
+import com.uplus.batch.domain.summary.service.KeywordExtractionService;
 import com.uplus.batch.domain.summary.service.SummaryProcessingLockService;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.item.Chunk;
@@ -25,6 +18,10 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -33,6 +30,9 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
   private final MongoTemplate mongoTemplate;
   private final SummaryEventStatusRepository summaryEventStatusRepository;
   private final SummaryProcessingLockService lockService;
+  private final KeywordExtractionService keywordService;
+
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
   @Override
   public void write(Chunk<? extends SummaryEventStatusRow> chunk) {
@@ -41,23 +41,26 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
         mongoTemplate.bulkOps(BulkOperations.BulkMode.UNORDERED, ConsultationSummary.class);
 
     List<Long> consultIds = new ArrayList<>();
-    List<Long> eventIds = new ArrayList<>();
 
     for (SummaryEventStatusRow item : chunk) {
       consultIds.add(item.consultId());
-      eventIds.add(item.id());
     }
 
     Map<Long, ConsultationResultSyncRow> results =
         summaryEventStatusRepository.findConsultationResultsByConsultIds(consultIds);
+
     Map<Long, List<ConsultProductLogSyncRow>> productLogs =
         summaryEventStatusRepository.findConsultProductLogs(consultIds);
+
     Map<Long, List<String>> riskFlags =
         summaryEventStatusRepository.findRiskFlags(consultIds);
+
     Map<Long, RetentionAnalysisRow> retention =
         summaryEventStatusRepository.findRetentionAnalysis(consultIds);
+
     Map<Long, CustomerReviewRow> reviews =
         summaryEventStatusRepository.findCustomerReviews(consultIds);
+
     Map<Long, RawTextRow> rawTexts =
         summaryEventStatusRepository.findRawTexts(consultIds);
 
@@ -77,23 +80,84 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
           throw new IllegalStateException("consultation_results not found");
         }
 
+        RawTextRow rawText = rawTexts.get(consultId);
+
+        List<Map<String, Object>> messages =
+            objectMapper.readValue(rawText.rawTextJson(), List.class);
+
+        String mergedText =
+            messages.stream()
+                .map(m -> (String) m.get("text"))
+                .collect(Collectors.joining(" "));
+
+        List<String> rawKeywords =
+            keywordService.extractKeywords(mergedText);
+
+        String iamText =
+            safe(row.iamIssue()) + " " +
+                safe(row.iamAction()) + " " +
+                safe(row.iamMemo());
+
+        List<String> iamKeywords =
+            keywordService.extractKeywords(iamText);
+
+        // Jaccard 유사도: 교집합 / 합집합 → 0~1 사이 부드러운 분포
+        Set<String> iamSet = new HashSet<>(iamKeywords);
+        Set<String> rawSet = new HashSet<>(rawKeywords);
+
+        Set<String> intersection = new HashSet<>(iamSet);
+        intersection.retainAll(rawSet);
+
+        Set<String> union = new HashSet<>(iamSet);
+        union.addAll(rawSet);
+
+        List<String> matchKeywords = new ArrayList<>(intersection);
+
+        double matchRate =
+            union.isEmpty()
+                ? 0.0
+                : (double) intersection.size() / union.size();
+
+        RetentionAnalysisRow retentionRow = retention.get(consultId);
+
+        List<String> summaryKeywords = null;
+
+        if (retentionRow != null && retentionRow.rawSummary() != null) {
+          summaryKeywords =
+              keywordService.extractKeywords(retentionRow.rawSummary());
+        }
+
         List<ResultProducts> resultProducts =
             buildResultProducts(productLogs.get(consultId));
 
-        Query query = Query.query(Criteria.where("consultId").is(consultId));
-        Update update = buildUpdate(
-            row,
-            resultProducts,
-            riskFlags.get(consultId),
-            retention.get(consultId),
-            reviews.get(consultId)
-        );
+        Query query =
+            Query.query(Criteria.where("consultId").is(consultId));
+
+        Update update =
+            buildUpdate(
+                row,
+                resultProducts,
+                riskFlags.get(consultId),
+                retentionRow,
+                reviews.get(consultId),
+                matchKeywords,
+                summaryKeywords,
+                matchRate
+            );
 
         bulk.upsert(query, update);
 
         completedIds.add(event.id());
 
       } catch (Exception e) {
+
+        log.error(
+            "Summary sync failed. consultId={}, eventId={}, retryCount={}",
+            consultId,
+            event.id(),
+            event.retryCount(),
+            e
+        );
 
         int nextRetryCount = event.retryCount() + 1;
 
@@ -105,9 +169,8 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
       }
     }
 
-    bulk.execute();
-
     if (!completedIds.isEmpty()) {
+      bulk.execute();
       summaryEventStatusRepository.markCompletedBatch(completedIds);
     }
 
@@ -129,7 +192,10 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
       List<ResultProducts> resultProducts,
       List<String> riskFlags,
       RetentionAnalysisRow retention,
-      CustomerReviewRow review
+      CustomerReviewRow review,
+      List<String> matchKeywords,
+      List<String> summaryKeywords,
+      double matchRate
   ) {
 
     return new Update()
@@ -143,14 +209,17 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
                 .issue(row.iamIssue())
                 .action(row.iamAction())
                 .memo(row.iamMemo())
+                .matchKeyword(matchKeywords)
+                .matchRates(matchRate)
                 .build())
-        .set("agent",
+        .set(
+            "agent",
             ConsultationSummary.Agent.builder()
                 .id(row.employeeId())
                 .name(row.employeeName())
-                .build()
-        )
-        .set("customer",
+                .build())
+        .set(
+            "customer",
             ConsultationSummary.Customer.builder()
                 .id(row.customerId())
                 .type(row.customerType())
@@ -159,42 +228,42 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
                 .ageGroup(row.ageGroup())
                 .grade(row.customerGrade())
                 .satisfiedScore(calculateScore(review))
-                .build()
-        )
-        .set("category",
+                .build())
+        .set(
+            "category",
             ConsultationSummary.Category.builder()
                 .code(row.categoryCode())
                 .large(row.categoryLarge())
                 .medium(row.categoryMedium())
                 .small(row.categorySmall())
-                .build()
-        )
+                .build())
         .set("riskFlags", riskFlags)
-        .set("summary",
-            retention == null ? null :
-                ConsultationSummary.Summary.builder()
+        .set(
+            "summary",
+            retention == null
+                ? null
+                : ConsultationSummary.Summary.builder()
                     .content(retention.rawSummary())
-                    .build()
-        )
-        .set("cancellation",
-            retention == null ? null :
-                ConsultationSummary.Cancellation.builder()
+                    .keywords(summaryKeywords)
+                    .build())
+        .set(
+            "cancellation",
+            retention == null
+                ? null
+                : ConsultationSummary.Cancellation.builder()
                     .intent(retention.hasIntent())
                     .defenseAttempted(retention.defenseAttempted())
                     .defenseSuccess(retention.defenseSuccess())
                     .defenseActions(retention.defenseActions())
                     .complaintReasons(retention.complaintReason())
-                    .build()
-        )
+                    .build())
         .set("resultProducts", resultProducts)
         .setOnInsert("createdAt", LocalDateTime.now());
   }
 
   private List<ResultProducts> buildResultProducts(List<ConsultProductLogSyncRow> logs) {
 
-    if (logs == null || logs.isEmpty()) {
-      return null;
-    }
+    if (logs == null || logs.isEmpty()) return null;
 
     List<String> subscribed = new ArrayList<>();
     List<String> canceled = new ArrayList<>();
@@ -208,72 +277,33 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
 
       switch (log.contractType()) {
 
-        case "NEW" -> {
-          if (newProduct != null) {
-            subscribed.add(newProduct);
-          }
-        }
+        case "NEW" -> { if (newProduct != null) subscribed.add(newProduct); }
 
-        case "CANCEL" -> {
-          if (canceledProduct != null) {
-            canceled.add(canceledProduct);
-          }
-        }
+        case "CANCEL" -> { if (canceledProduct != null) canceled.add(canceledProduct); }
 
-        case "CHANGE" -> {
-          conversion.add(
-              ResultProducts.Conversion.builder()
-                  .subscribed(newProduct)
-                  .canceled(canceledProduct)
-                  .build()
-          );
-        }
+        case "CHANGE" -> conversion.add(
+            ResultProducts.Conversion.builder()
+                .subscribed(newProduct)
+                .canceled(canceledProduct)
+                .build());
 
-        case "RENEW" -> {
-          if (newProduct != null) {
-            recommitment.add(newProduct);
-          }
-        }
+        case "RENEW" -> { if (newProduct != null) recommitment.add(newProduct); }
       }
     }
 
     List<ResultProducts> results = new ArrayList<>();
 
-    if (!subscribed.isEmpty()) {
-      results.add(
-          ResultProducts.builder()
-              .subscribed(subscribed)
-              .changeType("NEW")
-              .build()
-      );
-    }
+    if (!subscribed.isEmpty())
+      results.add(ResultProducts.builder().subscribed(subscribed).changeType("NEW").build());
 
-    if (!canceled.isEmpty()) {
-      results.add(
-          ResultProducts.builder()
-              .canceled(canceled)
-              .changeType("CANCEL")
-              .build()
-      );
-    }
+    if (!canceled.isEmpty())
+      results.add(ResultProducts.builder().canceled(canceled).changeType("CANCEL").build());
 
-    if (!conversion.isEmpty()) {
-      results.add(
-          ResultProducts.builder()
-              .conversion(conversion)
-              .changeType("CHANGE")
-              .build()
-      );
-    }
+    if (!conversion.isEmpty())
+      results.add(ResultProducts.builder().conversion(conversion).changeType("CHANGE").build());
 
-    if (!recommitment.isEmpty()) {
-      results.add(
-          ResultProducts.builder()
-              .recommitment(recommitment)
-              .changeType("RENEW")
-              .build()
-      );
-    }
+    if (!recommitment.isEmpty())
+      results.add(ResultProducts.builder().recommitment(recommitment).changeType("RENEW").build());
 
     return results;
   }
@@ -300,12 +330,10 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
 
     if (r == null) return null;
 
-    return (
-        r.score1()
-            + r.score2()
-            + r.score3()
-            + r.score4()
-            + r.score5()
-    ) / 5.0;
+    return (r.score1() + r.score2() + r.score3() + r.score4() + r.score5()) / 5.0;
+  }
+
+  private String safe(String v) {
+    return v == null ? "" : v;
   }
 }
