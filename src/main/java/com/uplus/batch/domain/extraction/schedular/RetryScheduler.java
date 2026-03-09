@@ -21,8 +21,10 @@ public class RetryScheduler {
 
     private final EventStatusRepository eventRepository;
 
-    @Scheduled(fixedDelay = 3600000) 
-    @Transactional 
+    // fixedDelayString으로 변경하여 테스트 시 application.yml의 retry.fixed-delay로 제어 가능
+    // 기본값 3600000ms (1시간), 테스트 시 99999999ms로 설정하여 자동 실행 방지
+    @Scheduled(fixedDelayString = "${retry.fixed-delay:3600000}")
+    @Transactional
     public void retryFailedTasks() {
         try {
             log.info("[Retry] 실패 데이터 재배치 엔진 가동...");

@@ -1,0 +1,88 @@
+package com.uplus.batch.domain.summary.entity;
+
+import com.uplus.batch.domain.extraction.entity.EventStatus;
+import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import java.time.LocalDateTime;
+
+/**
+ * summary_event_status 테이블 엔티티.
+ * SyntheticDataGeneratorScheduler가 삽입 → ConsultationSummaryGenerator가 감지하여 처리.
+ *
+ * DDL (자동 생성 안 될 경우 수동 실행):
+ * CREATE TABLE summary_event_status (
+ *   summary_event_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ *   consult_id       BIGINT       NOT NULL UNIQUE,
+ *   status           VARCHAR(20)  NOT NULL,
+ *   retry_count      INT          NOT NULL DEFAULT 0,
+ *   fail_reason      TEXT,
+ *   created_at       DATETIME     NOT NULL,
+ *   updated_at       DATETIME
+ * );
+ */
+@Entity
+@Table(name = "summary_event_status")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class SummaryEventStatus {
+
+    // DB 기존 DDL: PK 컬럼명 = "id" (summary_event_id가 아님)
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id")
+    private Long summaryEventId;
+
+    // DB DDL: unique 제약 없음 (복합 인덱스만 존재)
+    @Column(name = "consult_id", nullable = false)
+    private Long consultId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private EventStatus status;
+
+    @Column(name = "retry_count", nullable = false)
+    private int retryCount = 0;
+
+    @Column(name = "fail_reason", columnDefinition = "TEXT")
+    private String failReason;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt = LocalDateTime.now();
+
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @Builder
+    public SummaryEventStatus(Long consultId) {
+        this.consultId = consultId;
+        this.status = EventStatus.REQUESTED;
+        this.retryCount = 0;
+    }
+
+    public void start() {
+        this.status = EventStatus.PROCESSING;
+    }
+
+    public void complete() {
+        this.status = EventStatus.COMPLETED;
+    }
+
+    public void fail(String reason) {
+        this.status = EventStatus.FAILED;
+        this.retryCount++;
+        String trimmed = (reason != null && reason.length() > 200)
+                ? reason.substring(0, 200) + "..." : reason;
+        this.failReason = trimmed;
+    }
+
+    public void retry() {
+        this.status = EventStatus.REQUESTED;
+        this.failReason = null;
+    }
+}
