@@ -52,7 +52,6 @@ public class DailyAgentReportSnapshot {
   @NoArgsConstructor
   @AllArgsConstructor
   @Builder
-<<<<<<< feat/CV4-80
   public static class QualityAnalysis {
     private int analyzedCount;            // 실제 분석 완료 상담 건수 (주별/월별 가중 평균 분모용)
     private long empathyCount;            // 공감 표현 등장 총 횟수
@@ -64,16 +63,6 @@ public class DailyAgentReportSnapshot {
     private double accuracyRate;          // 정확 응대 표현 포함 비율 (%)
     private double waitingGuideRate;      // 대기 안내 포함 비율 (%)
     private double totalScore;            // 종합 점수 (0~5)
-=======
-  public static class QualityAnalysis { // 응대 품질 기능 구현할 때 보완필요
-    private int greetingCount;       // 인사말 포함 건수
-    private double greetingRate;     // 인사말 포함 비율 (%)
-    private int empathyExpressionCount; // 공감 표현 총 횟수
-    private int avgEmpathyPerConsult; //상담 1건당 평균 공감 표현 횟수
-    private double closingRate; // 마무리 멘트 포함 비율
-    private double waitingGuideRate; // 대기 안내 멘트 포함 비율
-    private double totalScore; // 종합 접수 (0~5)
-
   }
 
   @Data
@@ -87,6 +76,5 @@ public class DailyAgentReportSnapshot {
     // [중요] 주간/월간 가중 평균을 위해 꼭 필요한 필드들
     private int surveyTotalCount;       // 오늘의 설문 요청 총 건수
     private int surveyResponseCount;    // 오늘의 설문 응답 건수
->>>>>>> develop
   }
 }

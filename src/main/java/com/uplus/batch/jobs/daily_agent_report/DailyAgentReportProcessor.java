@@ -14,11 +14,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
-<<<<<<< feat/CV4-80
 import java.util.Map;
 import java.util.stream.Collectors;
-=======
->>>>>>> develop
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
