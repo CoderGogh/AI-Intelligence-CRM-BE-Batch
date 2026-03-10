@@ -27,7 +27,7 @@ server:
 
 app:
   summary-sync:
-    cron: "0 * * * * *"   # ConsultationSummaryGenerator 실행 주기 (매 1분)
+    cron: "0 * * * * *"
     batch-size: 100
 
 gemini:

@@ -85,4 +85,19 @@ public class SummaryEventStatus {
         this.status = EventStatus.REQUESTED;
         this.failReason = null;
     }
+
+    /** JDBC RowMapper 전용 재구성 팩토리 — DB 조회 결과를 엔티티로 복원할 때 사용 */
+    public static SummaryEventStatus reconstruct(Long id, Long consultId, EventStatus status,
+                                                 int retryCount, String failReason,
+                                                 LocalDateTime createdAt, LocalDateTime updatedAt) {
+        SummaryEventStatus e = new SummaryEventStatus();
+        e.summaryEventId = id;
+        e.consultId      = consultId;
+        e.status         = status;
+        e.retryCount     = retryCount;
+        e.failReason     = failReason;
+        e.createdAt      = createdAt;
+        e.updatedAt      = updatedAt;
+        return e;
+    }
 }
