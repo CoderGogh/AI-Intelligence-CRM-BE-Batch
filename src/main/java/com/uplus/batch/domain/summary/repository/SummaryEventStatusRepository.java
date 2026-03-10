@@ -75,19 +75,42 @@ public class SummaryEventStatusRepository {
     save(entity);
   }
 
-  /** 다건 상태 갱신 (RetryScheduler의 retryFailedSummaryTasks 에서 사용) */
+  /**
+   * 다건 저장 — id가 null이면 INSERT, 존재하면 UPDATE.
+   * triggerSummaryGeneration(신규 INSERT) / RetryScheduler(기존 UPDATE) 양쪽에서 사용.
+   */
   public void saveAll(List<SummaryEventStatus> entities) {
-    jdbcTemplate.batchUpdate(
-        "UPDATE summary_event_status SET status = ?, retry_count = ?, fail_reason = ?, updated_at = NOW() WHERE id = ?",
-        entities,
-        entities.size(),
-        (ps, e) -> {
-          ps.setString(1, e.getStatus().name());
-          ps.setInt(2, e.getRetryCount());
-          ps.setString(3, e.getFailReason());
-          ps.setLong(4, e.getSummaryEventId());
-        }
-    );
+    List<SummaryEventStatus> toInsert = entities.stream().filter(e -> e.getSummaryEventId() == null).toList();
+    List<SummaryEventStatus> toUpdate = entities.stream().filter(e -> e.getSummaryEventId() != null).toList();
+
+    if (!toInsert.isEmpty()) {
+      jdbcTemplate.batchUpdate(
+          "INSERT INTO summary_event_status (consult_id, status, retry_count, fail_reason, created_at) " +
+          "VALUES (?, ?, ?, ?, NOW())",
+          toInsert,
+          toInsert.size(),
+          (ps, e) -> {
+            ps.setLong(1, e.getConsultId());
+            ps.setString(2, e.getStatus().name());
+            ps.setInt(3, e.getRetryCount());
+            ps.setString(4, e.getFailReason());
+          }
+      );
+    }
+
+    if (!toUpdate.isEmpty()) {
+      jdbcTemplate.batchUpdate(
+          "UPDATE summary_event_status SET status = ?, retry_count = ?, fail_reason = ?, updated_at = NOW() WHERE id = ?",
+          toUpdate,
+          toUpdate.size(),
+          (ps, e) -> {
+            ps.setString(1, e.getStatus().name());
+            ps.setInt(2, e.getRetryCount());
+            ps.setString(3, e.getFailReason());
+            ps.setLong(4, e.getSummaryEventId());
+          }
+      );
+    }
   }
 
   // ── develop — ES 동기화 파이프라인용 메서드 ──────────────────────────────────────
