@@ -28,3 +28,7 @@ app:
   summary-sync:
     cron: "0 * * * * *"
     batch-size: 100
+
+gemini:
+  api:
+    key: ${GEMINI_API_KEY}
