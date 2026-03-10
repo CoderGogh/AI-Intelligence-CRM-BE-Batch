@@ -11,7 +11,9 @@ import com.uplus.batch.jobs.summary_dummy.dto.ConsultationResultRow;
 import com.uplus.batch.jobs.summary_dummy.generator.ConsultationSummaryDummyGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -57,6 +59,11 @@ public class ConsultationSummaryGenerator {
     private final JdbcTemplate jdbcTemplate;
     private final MongoTemplate mongoTemplate;
 
+    /** self-injection: processSingleTask의 @Transactional(REQUIRES_NEW)이 AOP 프록시를 통해 적용되도록 */
+    @Autowired
+    @Lazy
+    private ConsultationSummaryGenerator self;
+
     @Value("${app.summary-sync.batch-size:100}")
     private int batchSize;
 
@@ -71,6 +78,7 @@ public class ConsultationSummaryGenerator {
                    c.phone,
                    c.grade_code,
                    c.birth_date,
+                   c.gender,
                    cr.category_code,
                    cp.large_category,
                    cp.medium_category,
@@ -105,7 +113,7 @@ public class ConsultationSummaryGenerator {
 
         for (SummaryEventStatus task : pending) {
             try {
-                processSingleTask(task);
+                self.processSingleTask(task); // self-injection으로 @Transactional(REQUIRES_NEW) 적용
             } catch (Exception e) {
                 log.error("[SummaryGenerator] consultId={} 처리 중 예상치 못한 오류: {}",
                         task.getConsultId(), e.getMessage());
@@ -116,12 +124,8 @@ public class ConsultationSummaryGenerator {
     }
 
     /**
-     * 개별 Summary 생성. 별도 트랜잭션으로 격리하여 한 건 실패가 다른 건에 영향을 주지 않는다.
-     *
-     * TODO: processSummaryQueue()에서 this.processSingleTask()로 호출 시 Spring AOP 프록시가
-     *       우회(self-invocation)되어 @Transactional(REQUIRES_NEW)이 실제로 적용되지 않는다.
-     *       완전한 트랜잭션 격리가 필요하면 processSingleTask를 별도 @Service 빈으로 분리할 것.
-     *       (기존 ExtractionScheduler.processIndividualTask도 동일 패턴 사용 중 — 일관성 유지)
+     * 개별 Summary 생성. REQUIRES_NEW 트랜잭션으로 격리하여 한 건 실패가 다른 건에 영향을 주지 않는다.
+     * processSummaryQueue()는 self-injection(self.processSingleTask())으로 호출하여 AOP 프록시 적용.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void processSingleTask(SummaryEventStatus task) {
@@ -135,16 +139,21 @@ public class ConsultationSummaryGenerator {
             // 2. ConsultationSummaryDummyGenerator 기본 문서 생성
             ConsultationSummary doc = dummyGenerator.generate(row);
 
-            // 3. riskFlags 오버라이드 (40% 위험군, CHURN > FRAUD > PHISHING)
+            // 3. 합성 데이터 출처 마킹 (iam.memo의 [SYNTHETIC] 태그 기반)
+            if (row.getIamMemo() != null && row.getIamMemo().startsWith("[SYNTHETIC]")) {
+                doc.setSource("SYNTHETIC");
+            }
+
+            // 4. riskFlags 오버라이드 (40% 위험군, CHURN > FRAUD > PHISHING)
             doc.setRiskFlags(generateRiskFlags());
 
-            // 4. cancellation 오버라이드 (CHN 카테고리일 때만 intent=true 가능)
+            // 5. cancellation 오버라이드 (CHN 카테고리일 때만 intent=true 가능)
             doc.setCancellation(buildCancellation(row.getCategoryCode()));
 
-            // 5. iam 오버라이드 (상담사 empId % 3 기반 숙련도로 matchRates 차등 적용)
+            // 6. iam 오버라이드 (상담사 empId % 3 기반 숙련도로 matchRates 차등 적용)
             doc.setIam(buildIam(row));
 
-            // 6. summary.content 연결 (retention_analysis.raw_summary 조회)
+            // 7. summary.content 연결 (retention_analysis.raw_summary 조회)
             //    AI 추출 미완료 시 PENDING 상태로 저장, 이후 재처리 고려
             String rawSummary = extractionRepo.findById(task.getConsultId())
                     .map(ConsultationExtraction::getRawSummary)
@@ -191,6 +200,7 @@ public class ConsultationSummaryGenerator {
                         rs.getString("grade_code"),
                         rs.getDate("birth_date") != null
                                 ? rs.getDate("birth_date").toLocalDate() : null,
+                        rs.getString("gender"),
                         rs.getString("category_code"),
                         rs.getString("large_category"),
                         rs.getString("medium_category"),
@@ -322,6 +332,40 @@ public class ConsultationSummaryGenerator {
     }
 
     /**
+     * MongoDB에서 summary.status=PENDING인 문서를 재확인.
+     * AI 추출이 완료(retention_analysis.raw_summary 생성)되었으면 COMPLETED로 업데이트.
+     * processSummaryQueue()와 동일한 cron으로 실행 (매 1분).
+     */
+    @Scheduled(cron = "${app.summary-sync.cron}")
+    public void retryPendingSummaries() {
+        Query pendingQuery = new Query(Criteria.where("summary.status").is("PENDING")).limit(50);
+        List<ConsultationSummary> pendingDocs = mongoTemplate.find(pendingQuery, ConsultationSummary.class);
+
+        if (pendingDocs.isEmpty()) {
+            return;
+        }
+
+        log.info("[SummaryGenerator] PENDING 재처리 시작 - {}건", pendingDocs.size());
+        int resolved = 0;
+        for (ConsultationSummary doc : pendingDocs) {
+            String rawSummary = extractionRepo.findById(doc.getConsultId())
+                    .map(ConsultationExtraction::getRawSummary)
+                    .filter(s -> s != null && !s.isBlank())
+                    .orElse(null);
+
+            if (rawSummary != null) {
+                mongoTemplate.updateFirst(
+                        new Query(Criteria.where("consultId").is(doc.getConsultId())),
+                        new Update().set("summary.status", "COMPLETED").set("summary.content", rawSummary),
+                        ConsultationSummary.class
+                );
+                resolved++;
+            }
+        }
+        log.info("[SummaryGenerator] PENDING 재처리 완료 - {}건 → COMPLETED", resolved);
+    }
+
+    /**
      * ConsultationSummary 객체를 MongoDB Update 문서로 변환.
      * consultId 기준 upsert에 사용한다.
      */
@@ -339,6 +383,7 @@ public class ConsultationSummaryGenerator {
         update.set("cancellation", doc.getCancellation());
         update.set("resultProducts", doc.getResultProducts());
         update.set("summary",      doc.getSummary());
+        update.set("source",       doc.getSource());  // null = 실 운영, "SYNTHETIC" = 합성
         update.setOnInsert("createdAt", LocalDateTime.now());
         return update;
     }

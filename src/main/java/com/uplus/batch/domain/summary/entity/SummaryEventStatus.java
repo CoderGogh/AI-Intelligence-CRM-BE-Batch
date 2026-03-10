@@ -16,13 +16,13 @@ import java.time.LocalDateTime;
  *
  * DDL (자동 생성 안 될 경우 수동 실행):
  * CREATE TABLE summary_event_status (
- *   summary_event_id BIGINT AUTO_INCREMENT PRIMARY KEY,
- *   consult_id       BIGINT       NOT NULL UNIQUE,
- *   status           VARCHAR(20)  NOT NULL,
- *   retry_count      INT          NOT NULL DEFAULT 0,
- *   fail_reason      TEXT,
- *   created_at       DATETIME     NOT NULL,
- *   updated_at       DATETIME
+ *   id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+ *   consult_id  BIGINT       NOT NULL,
+ *   status      VARCHAR(20)  NOT NULL,
+ *   retry_count INT          NOT NULL DEFAULT 0,
+ *   fail_reason TEXT,
+ *   created_at  DATETIME     NOT NULL,
+ *   updated_at  DATETIME
  * );
  */
 @Entity
