@@ -48,7 +48,8 @@ public class SyntheticPersonMatcher {
             String customerType,
             String phone,
             String gradeCode,
-            LocalDate birthDate
+            LocalDate birthDate,
+            String gender          // 'M' | 'F' | null
     ) {}
 
     // ─────────────────────────────────────────────────────────
@@ -80,7 +81,7 @@ public class SyntheticPersonMatcher {
 
     private void loadCustomers() {
         customers = jdbcTemplate.query(
-                "SELECT customer_id, name, customer_type, phone, grade_code, birth_date " +
+                "SELECT customer_id, name, customer_type, phone, grade_code, birth_date, gender " +
                 "FROM customers",
                 (rs, rowNum) -> new CustomerInfo(
                         rs.getLong("customer_id"),
@@ -89,7 +90,8 @@ public class SyntheticPersonMatcher {
                         rs.getString("phone"),
                         rs.getString("grade_code"),
                         rs.getDate("birth_date") != null
-                                ? rs.getDate("birth_date").toLocalDate() : null
+                                ? rs.getDate("birth_date").toLocalDate() : null,
+                        rs.getString("gender")
                 )
         );
     }
