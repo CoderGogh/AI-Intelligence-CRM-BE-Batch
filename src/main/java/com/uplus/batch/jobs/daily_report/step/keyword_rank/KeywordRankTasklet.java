@@ -1,10 +1,10 @@
 package com.uplus.batch.jobs.daily_report.step.keyword_rank;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch._types.query_dsl.RangeQuery;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.json.JsonData;
+import com.mongodb.client.result.UpdateResult;
 import com.uplus.batch.common.elasticsearch.ElasticsearchAnalyzeService;
 import com.uplus.batch.jobs.daily_report.dto.DailyReportSnapshot;
 import com.uplus.batch.jobs.daily_report.dto.GradeSnapshot;
@@ -12,14 +12,21 @@ import com.uplus.batch.jobs.daily_report.step.keyword_rank.Consultation;
 import com.uplus.batch.jobs.daily_report.step.keyword_rank.ConsultationReaderConfig;
 import com.uplus.batch.jobs.daily_report.step.keyword_rank.KeywordAggregator;
 import com.uplus.batch.jobs.daily_report.step.keyword_rank.KeywordCount;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
+import java.util.Date;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.batch.core.StepContribution;
 import org.springframework.batch.core.scope.context.ChunkContext;
 import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -44,7 +51,7 @@ public class KeywordRankTasklet implements Tasklet {
      // [실제 운영용]
 //    LocalDate targetDate = LocalDate.now().minusDays(1);
     //[테스트용]
-    LocalDate targetDate = LocalDate.of(2025, 1, 15);
+    LocalDate targetDate = LocalDate.of(2025, 1, 18);
 
     String startOfDay = targetDate.atStartOfDay().toString();
     String endOfDay = targetDate.atTime(LocalTime.MAX).toString();
@@ -79,7 +86,7 @@ public class KeywordRankTasklet implements Tasklet {
         .buckets().array().stream()
         .map(b -> new KeywordCount(b.key().stringValue(), b.docCount()))
         // "null" 이라는 문자열을 가진 키워드 제외, 한글자 제외
-        .filter(k -> !"null".equals(k.getKeyword()) && k.getKeyword().length() > 1)
+//        .filter(k -> !"null".equals(k.getKeyword()) && k.getKeyword().length() > 1)
         .toList();
 
     List<GradeSnapshot> gradeSnapshots = response.aggregations().get("by_grade").sterms().buckets()
@@ -89,20 +96,21 @@ public class KeywordRankTasklet implements Tasklet {
               .sterms().buckets().array().stream()
               .map(k -> new KeywordCount(k.key().stringValue(), k.docCount()))
               // "null" 이라는 문자열을 가진 키워드 제외, 한글자 제외
-              .filter(k -> !"null".equals(k.getKeyword()) && k.getKeyword().length() > 1)
+//              .filter(k -> !"null".equals(k.getKeyword()) && k.getKeyword().length() > 1)
               .toList();
           return new GradeSnapshot(gradeBucket.key().stringValue(), keywords);
         })
         .toList();
 
-    // 3. Snapshot 생성 및 저장
-    DailyReportSnapshot snapshot = DailyReportSnapshot.builder()
-        .date(targetDate)
-        .topKeywords(topKeywords)
-        .byGradeCode(gradeSnapshots)
-        .build();
 
-    mongoTemplate.save(snapshot);
+    Query upsertQuery = new Query();
+    upsertQuery.addCriteria(Criteria.where("startAt").is(targetDate));
+
+    Update update = new Update()
+        .set("keywordSummary.topKeywords", topKeywords)
+        .set("keywordSummary.byCustomerType", gradeSnapshots);
+
+    mongoTemplate.upsert(upsertQuery, update, DailyReportSnapshot.class);
 
     return RepeatStatus.FINISHED;
   }
