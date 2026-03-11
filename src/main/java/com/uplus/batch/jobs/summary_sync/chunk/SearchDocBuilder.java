@@ -22,7 +22,7 @@ public class SearchDocBuilder {
       Long consultId,
       ConsultationResultSyncRow row,
       RetentionAnalysisRow retention,
-      List<String> riskFlags,
+      List<com.uplus.batch.domain.summary.entity.ConsultationSummary.RiskFlag> riskFlags,
       List<String> productCodes,
       String allText
   ) {
@@ -30,6 +30,7 @@ public class SearchDocBuilder {
 
     doc.put("consultId", consultId);
     doc.put("allText", allText);
+    doc.put("summaryContent", retention == null ? null : retention.rawSummary());
     doc.put("customerName", row.customerName());
     doc.put("phone", row.customerPhone());
     doc.put("customerId", row.customerId());
@@ -42,7 +43,11 @@ public class SearchDocBuilder {
     doc.put("categoryLarge", row.categoryLarge());
     doc.put("categoryMedium", row.categoryMedium());
     doc.put("categorySmall", row.categorySmall());
-    doc.put("riskFlags", riskFlags);
+    List<Map<String, String>> riskFlagDocs = riskFlags == null ? List.of() :
+        riskFlags.stream()
+            .map(r -> Map.of("riskType", r.getRiskType(), "riskLevel", r.getRiskLevel()))
+            .toList();
+    doc.put("riskFlags", riskFlagDocs);
     doc.put("intent", retention == null ? null : retention.hasIntent());
     doc.put("defenseAttempted", retention == null ? null : retention.defenseAttempted());
     doc.put("defenseSuccess", retention == null ? null : retention.defenseSuccess());
@@ -142,6 +147,7 @@ public class SearchDocBuilder {
     Map<String, Object> doc = new HashMap<>();
     doc.put("consultId", summary.getConsultId());
     doc.put("allText", allText);
+    doc.put("summaryContent", summary.getSummary() == null ? null : summary.getSummary().getContent());
     doc.put("customerName", c == null ? null : c.getName());
     doc.put("phone", c == null ? null : c.getPhone());
     doc.put("customerId", c == null ? null : c.getId());
@@ -154,7 +160,11 @@ public class SearchDocBuilder {
     doc.put("categoryLarge", cat == null ? null : cat.getLarge());
     doc.put("categoryMedium", cat == null ? null : cat.getMedium());
     doc.put("categorySmall", cat == null ? null : cat.getSmall());
-    doc.put("riskFlags", summary.getRiskFlags());
+    List<Map<String, String>> riskFlagDocs = summary.getRiskFlags() == null ? List.of() :
+        summary.getRiskFlags().stream()
+            .map(r -> Map.of("riskType", r.getRiskType(), "riskLevel", r.getRiskLevel()))
+            .toList();
+    doc.put("riskFlags", riskFlagDocs);
     doc.put("intent", can == null ? null : can.getIntent());
     doc.put("defenseAttempted", can == null ? null : can.getDefenseAttempted());
     doc.put("defenseSuccess", can == null ? null : can.getDefenseSuccess());
