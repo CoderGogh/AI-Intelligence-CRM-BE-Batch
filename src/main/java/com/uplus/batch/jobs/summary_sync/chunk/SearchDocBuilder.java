@@ -30,7 +30,6 @@ public class SearchDocBuilder {
 
     doc.put("consultId", consultId);
     doc.put("allText", allText);
-    doc.put("summaryContent", retention == null ? null : retention.rawSummary());
     doc.put("customerName", row.customerName());
     doc.put("phone", row.customerPhone());
     doc.put("customerId", row.customerId());
@@ -147,7 +146,6 @@ public class SearchDocBuilder {
     Map<String, Object> doc = new HashMap<>();
     doc.put("consultId", summary.getConsultId());
     doc.put("allText", allText);
-    doc.put("summaryContent", summary.getSummary() == null ? null : summary.getSummary().getContent());
     doc.put("customerName", c == null ? null : c.getName());
     doc.put("phone", c == null ? null : c.getPhone());
     doc.put("customerId", c == null ? null : c.getId());
