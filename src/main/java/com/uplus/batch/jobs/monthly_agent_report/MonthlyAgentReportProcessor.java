@@ -5,15 +5,16 @@ import com.uplus.batch.jobs.daily_agent_report.entity.DailyAgentReportSnapshot;
 import com.uplus.batch.jobs.daily_agent_report.entity.DailyAgentReportSnapshot.QualityAnalysis;
 import com.uplus.batch.jobs.monthly_agent_report.entity.MonthlyAgentReportSnapshot;
 import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 import java.util.HashMap;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -21,12 +22,22 @@ import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 @StepScope
 public class MonthlyAgentReportProcessor implements
     ItemProcessor<Long, MonthlyAgentReportSnapshot> {
 
   private final MongoTemplate mongoTemplate;
+  private final String startDateParam;
+  private final String endDateParam;
+
+  public MonthlyAgentReportProcessor(
+      MongoTemplate mongoTemplate,
+      @Value("#{jobParameters['startDate'] ?: null}") String startDateParam,
+      @Value("#{jobParameters['endDate'] ?: null}") String endDateParam) {
+    this.mongoTemplate = mongoTemplate;
+    this.startDateParam = startDateParam;
+    this.endDateParam = endDateParam;
+  }
 
   // totalScore 가중치 (DailyAgentReportProcessor와 동일)
   private static final double W_EMPATHY = 0.20;
@@ -39,13 +50,12 @@ public class MonthlyAgentReportProcessor implements
 
   @Override
   public MonthlyAgentReportSnapshot process(Long agentId) {
-    // [테스트용] 2025년 1월 데이터 집계 (1일 ~ 31일)
-    LocalDate startAt = LocalDate.of(2025, 1, 1);
-    LocalDate endAt = LocalDate.of(2025, 1, 31);
-
-    // 실운영 시 자동 계산:
-    // LocalDate startAt = LocalDate.now().minusMonths(1).withDayOfMonth(1);
-    // LocalDate endAt = LocalDate.now().minusMonths(1).with(TemporalAdjusters.lastDayOfMonth());
+    LocalDate startAt = (startDateParam != null && !startDateParam.isEmpty())
+        ? LocalDate.parse(startDateParam)
+        : LocalDate.now().minusMonths(1).withDayOfMonth(1);
+    LocalDate endAt = (endDateParam != null && !endDateParam.isEmpty())
+        ? LocalDate.parse(endDateParam)
+        : LocalDate.now().minusMonths(1).with(TemporalAdjusters.lastDayOfMonth());
 
     // 1. 해당 월의 모든 일별 스냅샷 조회
     Query query = new Query(
