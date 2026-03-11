@@ -4,16 +4,17 @@ import com.uplus.batch.jobs.daily_agent_report.entity.CategoryRanking;
 import com.uplus.batch.jobs.daily_agent_report.entity.DailyAgentReportSnapshot;
 import com.uplus.batch.jobs.daily_agent_report.entity.DailyAgentReportSnapshot.QualityAnalysis;
 import com.uplus.batch.jobs.weekly_agent_report.entity.WeeklyAgentReportSnapshot;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -21,11 +22,21 @@ import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 @StepScope
 public class WeeklyAgentReportProcessor implements ItemProcessor<Long, WeeklyAgentReportSnapshot> {
 
   private final MongoTemplate mongoTemplate;
+  private final String startDateParam;
+  private final String endDateParam;
+
+  public WeeklyAgentReportProcessor(
+      MongoTemplate mongoTemplate,
+      @Value("#{jobParameters['startDate'] ?: null}") String startDateParam,
+      @Value("#{jobParameters['endDate'] ?: null}") String endDateParam) {
+    this.mongoTemplate = mongoTemplate;
+    this.startDateParam = startDateParam;
+    this.endDateParam = endDateParam;
+  }
 
   // totalScore 가중치 (DailyAgentReportProcessor와 동일)
   private static final double W_EMPATHY = 0.20;
@@ -38,14 +49,12 @@ public class WeeklyAgentReportProcessor implements ItemProcessor<Long, WeeklyAge
 
   @Override
   public WeeklyAgentReportSnapshot process(Long agentId) {
-    // [테스트용] 지난주 월요일 ~ 일요일 고정 (2025-01-13 ~ 2025-01-19)
-    LocalDate startAt = LocalDate.of(2025, 1, 13);
-    LocalDate endAt = LocalDate.of(2025, 1, 19);
-
-    // [운영용]] 자동 계산 로직:
-    // LocalDate now = LocalDate.now();
-    // LocalDate startAt = now.minusWeeks(1).with(DayOfWeek.MONDAY);
-    // LocalDate endAt = now.minusWeeks(1).with(DayOfWeek.SUNDAY);
+    LocalDate startAt = (startDateParam != null && !startDateParam.isEmpty())
+        ? LocalDate.parse(startDateParam)
+        : LocalDate.now().minusWeeks(1).with(DayOfWeek.MONDAY);
+    LocalDate endAt = (endDateParam != null && !endDateParam.isEmpty())
+        ? LocalDate.parse(endDateParam)
+        : LocalDate.now().minusWeeks(1).with(DayOfWeek.SUNDAY);
 
     // 1. 해당 기간의 일별 스냅샷들을 가져옴
     Query query = new Query(

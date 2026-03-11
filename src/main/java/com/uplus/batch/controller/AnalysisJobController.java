@@ -150,18 +150,23 @@ public class AnalysisJobController {
 
     /**
      * 상담사 일별 리포트 배치 수동 실행
-     * 호출: http://localhost:8081/api/jobs/daily-agent-report
+     * 호출: http://localhost:8081/api/jobs/daily-agent-report?date=2025-01-18
      */
     @GetMapping("/daily-agent-report")
-    public String runDailyAgentReportJob() {
+    public String runDailyAgentReportJob(
+            @RequestParam(required = false) String date
+    ) {
         try {
-            JobParameters jobParameters = new JobParametersBuilder()
-                .addString("executionTime", LocalDateTime.now().toString())
-                .toJobParameters();
+            JobParametersBuilder builder = new JobParametersBuilder()
+                .addString("executionTime", LocalDateTime.now().toString());
 
-            jobLauncher.run(dailyAgentReportJob, jobParameters);
+            if (date != null && !date.isBlank()) {
+                builder.addString("targetDate", date);
+            }
 
-            return "Daily Agent Report Batch has been started for yesterday's data.";
+            jobLauncher.run(dailyAgentReportJob, builder.toJobParameters());
+
+            return "Daily Agent Report Batch has been started (date=" + date + ")";
         } catch (Exception e) {
             log.error("Batch Manual Execution Failed", e);
             return "Batch Job Failed: " + e.getMessage();
@@ -170,19 +175,28 @@ public class AnalysisJobController {
 
     /**
      * 상담사 주별 리포트 배치 수동 실행
-     * 호출: http://localhost:8081/api/jobs/weekly-agent-report
+     * 호출: http://localhost:8081/api/jobs/weekly-agent-report?startDate=2025-01-13&endDate=2025-01-19
      */
     @GetMapping("/weekly-agent-report")
-    public String runWeeklyAgentReportJob() {
+    public String runWeeklyAgentReportJob(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate
+    ) {
         try {
-            JobParameters jobParameters = new JobParametersBuilder()
+            JobParametersBuilder builder = new JobParametersBuilder()
                 .addString("executionTime", LocalDateTime.now().toString())
-                .addString("jobType", "WEEKLY")
-                .toJobParameters();
+                .addString("jobType", "WEEKLY");
 
-            jobLauncher.run(weeklyAgentReportJob, jobParameters);
+            if (startDate != null && !startDate.isBlank()) {
+                builder.addString("startDate", startDate);
+            }
+            if (endDate != null && !endDate.isBlank()) {
+                builder.addString("endDate", endDate);
+            }
 
-            return "Weekly Agent Report Batch has been started (Based on last week's Daily Snapshots).";
+            jobLauncher.run(weeklyAgentReportJob, builder.toJobParameters());
+
+            return "Weekly Agent Report Batch has been started (startDate=" + startDate + ", endDate=" + endDate + ")";
         } catch (Exception e) {
             log.error("Weekly Batch Manual Execution Failed", e);
             return "Weekly Batch Job Failed: " + e.getMessage();
@@ -191,19 +205,28 @@ public class AnalysisJobController {
 
     /**
      * 상담사 월별 리포트 배치 수동 실행
-     * 호출: http://localhost:8081/api/jobs/monthly-agent-report
+     * 호출: http://localhost:8081/api/jobs/monthly-agent-report?startDate=2025-01-01&endDate=2025-01-31
      */
     @GetMapping("/monthly-agent-report")
-    public String runMonthlyAgentReportJob() {
+    public String runMonthlyAgentReportJob(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate
+    ) {
         try {
-            JobParameters jobParameters = new JobParametersBuilder()
+            JobParametersBuilder builder = new JobParametersBuilder()
                 .addString("executionTime", LocalDateTime.now().toString())
-                .addString("jobType", "MONTHLY")
-                .toJobParameters();
+                .addString("jobType", "MONTHLY");
 
-            jobLauncher.run(monthlyAgentReportJob, jobParameters);
+            if (startDate != null && !startDate.isBlank()) {
+                builder.addString("startDate", startDate);
+            }
+            if (endDate != null && !endDate.isBlank()) {
+                builder.addString("endDate", endDate);
+            }
 
-            return "Monthly Agent Report Batch has been started (Based on last month's Daily Snapshots).";
+            jobLauncher.run(monthlyAgentReportJob, builder.toJobParameters());
+
+            return "Monthly Agent Report Batch has been started (startDate=" + startDate + ", endDate=" + endDate + ")";
         } catch (Exception e) {
             log.error("Monthly Batch Manual Execution Failed", e);
             return "Monthly Batch Job Failed: " + e.getMessage();

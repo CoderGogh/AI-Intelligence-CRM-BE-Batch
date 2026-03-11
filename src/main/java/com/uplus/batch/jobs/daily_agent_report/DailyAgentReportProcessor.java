@@ -10,11 +10,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -36,12 +36,21 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 @StepScope
 public class DailyAgentReportProcessor implements ItemProcessor<Long, DailyAgentReportSnapshot> {
 
   private final MongoTemplate mongoTemplate;
   private final QualityAnalysisAggregator qualityAnalysisAggregator;
+  private final String targetDateParam;
+
+  public DailyAgentReportProcessor(
+      MongoTemplate mongoTemplate,
+      QualityAnalysisAggregator qualityAnalysisAggregator,
+      @Value("#{jobParameters['targetDate'] ?: null}") String targetDateParam) {
+    this.mongoTemplate = mongoTemplate;
+    this.qualityAnalysisAggregator = qualityAnalysisAggregator;
+    this.targetDateParam = targetDateParam;
+  }
 
   // === ES analysis_synonyms.txt 동의어 매핑 결과 토큰 ===
   private static final String TOKEN_EMPATHY = "공감응대";
@@ -65,12 +74,9 @@ public class DailyAgentReportProcessor implements ItemProcessor<Long, DailyAgent
   @Override
   public DailyAgentReportSnapshot process(Long agentId) {
 
-    // [테스트용] 2025-01-18 데이터로 고정
-    LocalDate targetDate = LocalDate.of(2025, 1, 18);
-
-    // [운영용]
-    // 배치는 어제 날짜 데이터를 집계합니다.
-//    LocalDate targetDate = LocalDate.now().minusDays(1);
+    LocalDate targetDate = (targetDateParam != null && !targetDateParam.isEmpty())
+        ? LocalDate.parse(targetDateParam)
+        : LocalDate.now().minusDays(1);
 
     // 1. 카테고리별 집계
     List<CategoryRanking> rankings = aggregateCategoryRanking(agentId, targetDate);
