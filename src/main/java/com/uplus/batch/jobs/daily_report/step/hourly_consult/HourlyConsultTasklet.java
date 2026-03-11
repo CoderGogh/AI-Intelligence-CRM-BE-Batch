@@ -143,12 +143,6 @@ public class HourlyConsultTasklet implements Tasklet {
                 keywordAnalysis.getTopKeywords().size(),
                 keywordAnalysis.getNewKeywords().size());
 
-        // 4) 전체 키워드 분석 (keywordSummary) — [변경] 하루 전체 원문 기준
-        Map<String, Long> dailyKeywords = aggregateKeywordsFromRawText(
-                dayStart.withHour(9), dayEnd.withHour(18));
-        Map<String, Long> prevDailyKeywords = loadDailyKeywords(targetDate.minusDays(1));
-        HourlyConsultResult.KeywordSummary keywordSummary = buildKeywordSummary(
-                dailyKeywords, prevDailyKeywords, dayStart, dayEnd);
 
         // 5) 슬롯 결과 조립
         HourlyConsultResult.TimeSlotResult slotResult = HourlyConsultResult.TimeSlotResult.builder()
@@ -173,7 +167,6 @@ public class HourlyConsultTasklet implements Tasklet {
                 .totalConsultCount(totalCount)
                 .avgDurationMinutes(totalAvgMin)
                 .timeSlotTrend(allSlots)
-                .keywordSummary(keywordSummary)
                 .build();
 
         contribution.getStepExecution()
@@ -392,59 +385,6 @@ public class HourlyConsultTasklet implements Tasklet {
         return result;
     }
 
-    private Map<String, Long> loadDailyKeywords(LocalDate prevDate) {
-        Map<String, Long> result = new LinkedHashMap<>();
-        LocalDateTime prevStart = prevDate.atStartOfDay();
-        Query query = new Query(Criteria.where("startAt").is(prevStart));
-        Document snapshot = mongoTemplate.findOne(query, Document.class, SNAPSHOT_COLLECTION);
-        if (snapshot == null) return result;
-
-        Document kwSummary = snapshot.get("keywordSummary", Document.class);
-        if (kwSummary == null) return result;
-
-        List<Document> topKws = kwSummary.getList("topKeywords", Document.class);
-        if (topKws != null) {
-            for (Document kw : topKws) {
-                result.put(kw.getString("keyword"),
-                        kw.get("count") instanceof Number
-                                ? ((Number) kw.get("count")).longValue() : 0L);
-            }
-        }
-        return result;
-    }
-
-    // ═══════════════════════════════════════════════════════
-    //  전체 키워드 분석 (keywordSummary)
-    // ═══════════════════════════════════════════════════════
-
-    private HourlyConsultResult.KeywordSummary buildKeywordSummary(
-            Map<String, Long> dailyKeywords,
-            Map<String, Long> prevDailyKeywords,
-            LocalDateTime dayStart, LocalDateTime dayEnd) {
-
-        List<HourlyConsultResult.TopKeyword> topKeywords = new ArrayList<>();
-        int rank = 1;
-        for (Map.Entry<String, Long> entry : dailyKeywords.entrySet()) {
-            if (rank > TOP_KEYWORD_SIZE) break;
-            long prevCount = prevDailyKeywords.getOrDefault(entry.getKey(), 0L);
-            double changeRate = prevCount > 0
-                    ? Math.round(((entry.getValue() - prevCount) * 100.0 / prevCount) * 10.0) / 10.0
-                    : 0;
-            topKeywords.add(HourlyConsultResult.TopKeyword.builder()
-                    .keyword(entry.getKey()).count(entry.getValue())
-                    .rank(rank++).changeRate(changeRate)
-                    .build());
-        }
-
-        // [변경] 고객 유형별 키워드도 MySQL 원문 기반으로 집계
-        List<HourlyConsultResult.CustomerTypeKeyword> byCustomerType =
-                aggregateKeywordsByCustomerTypeFromRawText(dayStart, dayEnd);
-
-        return HourlyConsultResult.KeywordSummary.builder()
-                .topKeywords(topKeywords)
-                .byCustomerType(byCustomerType)
-                .build();
-    }
 
     /**
      * [변경] 고객 유형별 키워드 집계
@@ -604,15 +544,6 @@ public class HourlyConsultTasklet implements Tasklet {
                     .append("keywordAnalysis", kwDoc);
         }).collect(Collectors.toList());
 
-        Document kwSummaryDoc = new Document();
-        kwSummaryDoc.append("topKeywords", result.getKeywordSummary().getTopKeywords().stream()
-                .map(k -> new Document("keyword", k.getKeyword()).append("count", k.getCount())
-                        .append("rank", k.getRank()).append("changeRate", k.getChangeRate()))
-                .collect(Collectors.toList()));
-        kwSummaryDoc.append("byCustomerType", result.getKeywordSummary().getByCustomerType().stream()
-                .map(ct -> new Document("customerType", ct.getCustomerType())
-                        .append("keywords", ct.getKeywords()))
-                .collect(Collectors.toList()));
 
         Query upsertQuery = new Query(Criteria.where("startAt").is(dayStart));
         Update update = new Update()
@@ -620,7 +551,6 @@ public class HourlyConsultTasklet implements Tasklet {
                 .set("totalConsultCount", result.getTotalConsultCount())
                 .set("avgDurationMinutes", result.getAvgDurationMinutes())
                 .set("timeSlotTrend", trendDocs)
-                .set("keywordSummary", kwSummaryDoc)
                 .setOnInsert("createdAt", LocalDateTime.now());
 
         mongoTemplate.upsert(upsertQuery, update, SNAPSHOT_COLLECTION);
