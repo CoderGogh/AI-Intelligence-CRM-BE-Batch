@@ -80,12 +80,11 @@ public class WeeklySubscriptionStatsTasklet implements Tasklet {
         if (subIds != null) {
           processAction(subIds, newSubMap, productMasterMap);
 
-          // 연령대별 상품 카운트를 수행
+          // 연령대별 상품 카운트를 수행 (productId 기준)
           for (String id : subIds) {
-            String productName = productMasterMap.getOrDefault(id, id);
             ageGroupPrefs
                 .computeIfAbsent(ageGroup, k -> new HashMap<>())
-                .merge(productName, 1L, Long::sum);
+                .merge(id, 1L, Long::sum);
           }
         }
 
@@ -99,7 +98,6 @@ public class WeeklySubscriptionStatsTasklet implements Tasklet {
     WeeklyReportSnapshot snapshot = new WeeklyReportSnapshot();
     snapshot.setStartAt(startAt);
     snapshot.setEndAt(endAt);
-
     WeeklyReportSnapshot.SubscriptionAnalysis analysis = new WeeklyReportSnapshot.SubscriptionAnalysis();
 
     // Map 데이터를 명세서 구조(List<ProductCount>)로 변환
@@ -112,7 +110,7 @@ public class WeeklySubscriptionStatsTasklet implements Tasklet {
     List<WeeklyReportSnapshot.ByAgeGroup> agePrefsList = ageGroupPrefs.entrySet().stream()
         .map(entry -> {
           List<WeeklyReportSnapshot.ProductCount> top3 = entry.getValue().entrySet().stream()
-              .map(e -> new WeeklyReportSnapshot.ProductCount(null, e.getKey(), e.getValue()))
+              .map(e -> new WeeklyReportSnapshot.ProductCount(e.getKey(), productMasterMap.getOrDefault(e.getKey(), e.getKey()), e.getValue()))
               .sorted(Comparator.comparingLong(WeeklyReportSnapshot.ProductCount::getCount).reversed())
               .limit(3)
               .collect(Collectors.toList());
