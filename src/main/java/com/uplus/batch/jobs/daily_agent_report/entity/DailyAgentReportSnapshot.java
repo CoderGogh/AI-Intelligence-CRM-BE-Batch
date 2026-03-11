@@ -1,12 +1,14 @@
 package com.uplus.batch.jobs.daily_agent_report.entity;
 
 import lombok.*;
+import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -34,6 +36,9 @@ public class DailyAgentReportSnapshot {
   private LocalDate endAt;     // 집계 종료 일자
 
   private long consultCount;   // 개인 상담 처리 건수 (전체)
+
+  @CreatedDate
+  private LocalDateTime createdAt;   // 생성일시
 
   private double avgDurationMinutes; // 개인 평균 상담 소요 시간 (분 단위)
 
