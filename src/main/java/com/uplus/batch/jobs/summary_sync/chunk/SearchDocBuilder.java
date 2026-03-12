@@ -42,6 +42,7 @@ public class SearchDocBuilder {
     doc.put("categoryLarge", row.categoryLarge());
     doc.put("categoryMedium", row.categoryMedium());
     doc.put("categorySmall", row.categorySmall());
+    doc.put("channel", row.channel());
     List<Map<String, String>> riskFlagDocs = riskFlags == null ? List.of() :
         riskFlags.stream()
             .map(r -> Map.of("riskType", r.getRiskType(), "riskLevel", r.getRiskLevel()))
@@ -158,6 +159,7 @@ public class SearchDocBuilder {
     doc.put("categoryLarge", cat == null ? null : cat.getLarge());
     doc.put("categoryMedium", cat == null ? null : cat.getMedium());
     doc.put("categorySmall", cat == null ? null : cat.getSmall());
+    doc.put("channel", summary.getChannel());
     List<Map<String, String>> riskFlagDocs = summary.getRiskFlags() == null ? List.of() :
         summary.getRiskFlags().stream()
             .map(r -> Map.of("riskType", r.getRiskType(), "riskLevel", r.getRiskLevel()))

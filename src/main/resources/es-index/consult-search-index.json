@@ -134,6 +134,10 @@
         "type": "keyword"
       },
 
+      "channel": {
+        "type": "keyword"
+      },
+
       "riskFlags": {
         "type": "object",
         "properties": {
