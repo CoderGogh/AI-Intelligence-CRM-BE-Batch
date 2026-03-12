@@ -94,8 +94,8 @@ public class DailyAgentReportProcessor implements ItemProcessor<Long, DailyAgent
     return DailyAgentReportSnapshot.builder()
         .agentId(agentId)
         .agentName(agentName)
-        .startAt(targetDate)
-        .endAt(targetDate)
+        .startAt(targetDate.atStartOfDay())
+        .endAt(targetDate.atTime(23, 59, 59))
         .consultCount(metrics.getCount())
         .avgDurationMinutes(metrics.getAvgDuration() / 60.0) // 초 단위를 분 단위로 변환
         .iamKeywordMatchAnalysis(metrics.getAvgIamMatchRate())

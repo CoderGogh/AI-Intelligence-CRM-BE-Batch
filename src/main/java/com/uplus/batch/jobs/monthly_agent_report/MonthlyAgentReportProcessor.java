@@ -132,8 +132,8 @@ public class MonthlyAgentReportProcessor implements
     return MonthlyAgentReportSnapshot.builder()
         .agentId(agentId)
         .agentName(dailySnapshots.get(0).getAgentName())
-        .startAt(startAt)
-        .endAt(endAt)
+        .startAt(startAt.atStartOfDay())
+        .endAt(endAt.atTime(23, 59, 59))
         .consultCount(totalConsultCount)
         .avgDurationMinutes(monthlyAvgDuration) // 주간 가중 평균 소요 시간
         .iamKeywordMatchAnalysis(monthlyIamMatchRate) // 최종 월간 일치율 반영
