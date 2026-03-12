@@ -5,7 +5,6 @@ import com.uplus.batch.jobs.daily_agent_report.entity.DailyAgentReportSnapshot;
 import com.uplus.batch.jobs.daily_agent_report.entity.DailyAgentReportSnapshot.QualityAnalysis;
 import com.uplus.batch.jobs.weekly_agent_report.entity.WeeklyAgentReportSnapshot;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -126,7 +125,7 @@ public class WeeklyAgentReportProcessor implements ItemProcessor<Long, WeeklyAge
         .agentId(agentId)
         .agentName(dailySnapshots.get(0).getAgentName())
         .startAt(startAt.atStartOfDay())
-        .endAt(endAt.atTime(LocalTime.MAX))
+        .endAt(endAt.atTime(23, 59, 59))
         .consultCount(totalConsultCount)
         .avgDurationMinutes(weeklyAvgDuration)
         .iamKeywordMatchAnalysis(weeklyIamMatchRate)
