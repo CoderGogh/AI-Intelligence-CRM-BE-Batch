@@ -1,19 +1,17 @@
 package com.uplus.batch.domain.extraction.service;
 
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.BDDMockito.*;
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.uplus.batch.domain.extraction.dto.AiExtractionResponse;
-import com.uplus.batch.domain.extraction.entity.ConsultationRawText;
-import com.uplus.batch.domain.extraction.entity.EventStatus;
-import com.uplus.batch.domain.extraction.entity.ResultEventStatus;
-import com.uplus.batch.domain.extraction.repository.ConsultationExtractionRepository;
-import com.uplus.batch.domain.extraction.repository.ConsultationRawTextRepository;
-import com.uplus.batch.domain.extraction.repository.EventStatusRepository;
-import com.uplus.batch.domain.extraction.schedular.ExtractionScheduler;
-import com.uplus.batch.domain.extraction.service.ConsultationExtractionManager;
+import java.util.List;
+import java.util.Optional;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,13 +21,20 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.List;
-import java.util.Optional;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.uplus.batch.domain.extraction.dto.AiExtractionResponse;
+import com.uplus.batch.domain.extraction.entity.ConsultationRawText;
+import com.uplus.batch.domain.extraction.entity.EventStatus;
+import com.uplus.batch.domain.extraction.entity.ResultEventStatus;
+import com.uplus.batch.domain.extraction.repository.ConsultationExtractionRepository;
+import com.uplus.batch.domain.extraction.repository.ConsultationRawTextRepository;
+import com.uplus.batch.domain.extraction.repository.ResultEventStatusRepository;
+import com.uplus.batch.domain.extraction.scheduler.ExtractionScheduler;
 
 @ExtendWith(MockitoExtension.class)
 class ExtractionBusinessTest {
 
-    @Mock private EventStatusRepository eventRepository;
+    @Mock private ResultEventStatusRepository eventRepository;
     @Mock private ConsultationRawTextRepository rawTextRepository;
     @Mock private ConsultationExtractionRepository extractionRepository;
     @Mock private ConsultationExtractionManager extractionManager;

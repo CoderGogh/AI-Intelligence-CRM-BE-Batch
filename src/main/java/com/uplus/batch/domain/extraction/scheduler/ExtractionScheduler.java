@@ -1,10 +1,11 @@
-package com.uplus.batch.domain.extraction.schedular;
+package com.uplus.batch.domain.extraction.scheduler;
 
 import java.util.List;
+
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uplus.batch.domain.extraction.dto.AiExtractionResponse;
 import com.uplus.batch.domain.extraction.entity.ConsultationExtraction;
@@ -13,17 +14,18 @@ import com.uplus.batch.domain.extraction.entity.EventStatus;
 import com.uplus.batch.domain.extraction.entity.ResultEventStatus;
 import com.uplus.batch.domain.extraction.repository.ConsultationExtractionRepository;
 import com.uplus.batch.domain.extraction.repository.ConsultationRawTextRepository;
-import com.uplus.batch.domain.extraction.repository.EventStatusRepository;
+import com.uplus.batch.domain.extraction.repository.ResultEventStatusRepository;
 import com.uplus.batch.domain.extraction.service.ConsultationExtractionManager;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@Component
+//@Component
 @RequiredArgsConstructor
 public class ExtractionScheduler {
 
-    private final EventStatusRepository eventRepository;
+    private final ResultEventStatusRepository eventRepository;
     private final ConsultationRawTextRepository rawTextRepository;
     private final ConsultationExtractionRepository extractionRepository;
     private final ConsultationExtractionManager extractionManager;
