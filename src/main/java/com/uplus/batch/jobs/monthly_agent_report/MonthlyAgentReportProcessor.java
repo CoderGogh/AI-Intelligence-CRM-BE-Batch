@@ -5,7 +5,6 @@ import com.uplus.batch.jobs.daily_agent_report.entity.DailyAgentReportSnapshot;
 import com.uplus.batch.jobs.daily_agent_report.entity.DailyAgentReportSnapshot.QualityAnalysis;
 import com.uplus.batch.jobs.monthly_agent_report.entity.MonthlyAgentReportSnapshot;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.Comparator;
 import java.util.List;
@@ -124,7 +123,7 @@ public class MonthlyAgentReportProcessor implements
         .agentId(agentId)
         .agentName(dailySnapshots.get(0).getAgentName())
         .startAt(startAt.atStartOfDay())
-        .endAt(endAt.atTime(LocalTime.MAX))
+        .endAt(endAt.atTime(23, 59, 59))
         .consultCount(totalConsultCount)
         .avgDurationMinutes(monthlyAvgDuration) // 주간 가중 평균 소요 시간
         .iamKeywordMatchAnalysis(monthlyIamMatchRate) // 최종 월간 일치율 반영
