@@ -33,7 +33,7 @@ class HistoricalBatchControllerTest {
         given(properties.isEnabled()).willReturn(false);
 
         // When
-        ResponseEntity<Map<String, Object>> response = controller.runBatch();
+        ResponseEntity<Map<String, Object>> response = controller.runBatch(null);
 
         // Then
         assertThat(response.getStatusCode().value()).isEqualTo(403);
@@ -46,10 +46,11 @@ class HistoricalBatchControllerTest {
     void runBatch_AlreadyRunning_Returns409() {
         // Given
         given(properties.isEnabled()).willReturn(true);
+        given(properties.getDailyCount()).willReturn(10);
         given(batchService.isRunning()).willReturn(true);
 
         // When
-        ResponseEntity<Map<String, Object>> response = controller.runBatch();
+        ResponseEntity<Map<String, Object>> response = controller.runBatch(null);
 
         // Then
         assertThat(response.getStatusCode().value()).isEqualTo(409);
@@ -64,11 +65,11 @@ class HistoricalBatchControllerTest {
         given(batchService.isRunning()).willReturn(false);
         given(properties.getStartDate()).willReturn(LocalDate.of(2026, 1, 1));
         given(properties.getEndDate()).willReturn(LocalDate.of(2026, 3, 24));
-        given(properties.getDailyCount()).willReturn(1000);
+        given(properties.getDailyCount()).willReturn(10);
         given(properties.getChunkSize()).willReturn(100);
 
         // When
-        ResponseEntity<Map<String, Object>> response = controller.runBatch();
+        ResponseEntity<Map<String, Object>> response = controller.runBatch(null);
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
