@@ -33,12 +33,6 @@ gemini:
   api:
     key: ${GEMINI_API_KEY}
 
-synthetic-data: #스케쥴러로 데이터 생성 <-- 여기서 컨트롤
-  enabled: true
-  batch-size: 20                 # 회차당 생성 건수
-  fixed-delay: 300000            # 스케줄러 실행 간격 (ms, 기본 5분) <-- 6000 = 1분
-  failure-alert-threshold: 5     # AI 요약 영구 실패(retryCount>=3) 알람 임계값
-
 historical-batch:
   enabled: true       # true로 변경 후 /api/historical/run 호출 시 배치 시작
   start-date: "2026-01-01"
