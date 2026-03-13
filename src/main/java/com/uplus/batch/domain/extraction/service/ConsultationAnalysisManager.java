@@ -111,7 +111,10 @@ public class ConsultationAnalysisManager {
                 .evaluationReason(res.evaluation_reason())
                 .isCandidate(res.is_candidate())
                 .build();
+        
         evaluationRepository.save(entity);
+        log.info("[Evaluation Saved] 상담 ID: {}, 후보여부: {}, 상태: {}", 
+                 id, res.is_candidate(), entity.getSelectionStatus());
     }
 
     private String truncate(String msg) { 
