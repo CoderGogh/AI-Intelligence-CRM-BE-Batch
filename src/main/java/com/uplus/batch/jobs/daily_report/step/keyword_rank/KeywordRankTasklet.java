@@ -90,10 +90,48 @@ public class KeywordRankTasklet implements Tasklet {
         })
         .toList();
 
-    // Document로 변환하여 _class 메타데이터 저장 방지
-    List<Document> topKeywordDocs = topKeywords.stream()
-        .map(k -> new Document("keyword", k.getKeyword()).append("count", k.getCount()))
-        .toList();
+    // 전일 스냅샷에서 키워드 순위 조회 (changeRate, newKeywords 계산용)
+    LocalDate previousDate = targetDate.minusDays(1);
+    Query prevQuery = new Query(Criteria.where("startAt").is(previousDate));
+    Document prevSnapshot = mongoTemplate.findOne(prevQuery, Document.class, "daily_report_snapshot");
+    Map<String, Long> prevKeywordMap = new java.util.LinkedHashMap<>();
+    if (prevSnapshot != null) {
+      Document prevKwSummary = prevSnapshot.get("keywordSummary", Document.class);
+      if (prevKwSummary != null) {
+        List<Document> prevTopDocs = prevKwSummary.getList("topKeywords", Document.class);
+        if (prevTopDocs != null) {
+          for (Document d : prevTopDocs) {
+            String kw = d.getString("keyword");
+            long cnt = d.get("count") instanceof Number ? ((Number) d.get("count")).longValue() : 0;
+            if (kw != null) prevKeywordMap.put(kw, cnt);
+          }
+        }
+      }
+    }
+
+    // Document로 변환 (rank, changeRate 포함)
+    List<Document> topKeywordDocs = new java.util.ArrayList<>();
+    List<Document> newKeywordDocs = new java.util.ArrayList<>();
+    for (int i = 0; i < topKeywords.size(); i++) {
+      KeywordCount k = topKeywords.get(i);
+      int rank = i + 1;
+      double changeRate = 0;
+      Long prevCount = prevKeywordMap.get(k.getKeyword());
+      if (prevCount != null && prevCount > 0) {
+        changeRate = Math.round((double)(k.getCount() - prevCount) / prevCount * 1000.0) / 10.0;
+      }
+
+      topKeywordDocs.add(new Document("keyword", k.getKeyword())
+          .append("count", k.getCount())
+          .append("rank", rank)
+          .append("changeRate", changeRate));
+
+      // 전일 TOP에 없던 키워드 → 신규 진입
+      if (prevCount == null) {
+        newKeywordDocs.add(new Document("keyword", k.getKeyword())
+            .append("count", k.getCount()));
+      }
+    }
 
     List<Document> gradeDocs = gradeSnapshots.stream()
         .map(g -> {
@@ -109,6 +147,7 @@ public class KeywordRankTasklet implements Tasklet {
 
     Update update = new Update()
         .set("keywordSummary.topKeywords", topKeywordDocs)
+        .set("keywordSummary.newKeywords", newKeywordDocs)
         .set("keywordSummary.byCustomerType", gradeDocs);
 
     mongoTemplate.upsert(upsertQuery, update, DailyReportSnapshot.class);
