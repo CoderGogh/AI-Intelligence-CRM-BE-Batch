@@ -1,8 +1,7 @@
 package com.uplus.batch.jobs.daily_report.step.hourly_consult;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.uplus.batch.common.elasticsearch.ElasticsearchAnalyzeService;
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch.core.SearchResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.bson.Document;
 import org.springframework.batch.core.StepContribution;
@@ -18,7 +17,6 @@ import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -42,8 +40,7 @@ import java.util.stream.Collectors;
 public class HourlyConsultTasklet implements Tasklet {
 
     private final MongoTemplate mongoTemplate;
-    private final ElasticsearchAnalyzeService analyzeService; // [변경] ES Terms → Nori analyze
-    private final JdbcTemplate jdbcTemplate;                  // [추가] MySQL 원문 조회용
+    private final ElasticsearchClient elasticsearchClient;
     private final String targetDateParam;
     private final String targetSlotParam;
 
@@ -74,13 +71,11 @@ public class HourlyConsultTasklet implements Tasklet {
 
     public HourlyConsultTasklet(
             MongoTemplate mongoTemplate,
-            ElasticsearchAnalyzeService analyzeService,
-            JdbcTemplate jdbcTemplate,
+            ElasticsearchClient elasticsearchClient,
             @Value("#{jobParameters['targetDate'] ?: null}") String targetDateParam,
             @Value("#{jobParameters['slot'] ?: null}") String targetSlotParam) {
         this.mongoTemplate = mongoTemplate;
-        this.analyzeService = analyzeService;
-        this.jdbcTemplate = jdbcTemplate;
+        this.elasticsearchClient = elasticsearchClient;
         this.targetDateParam = targetDateParam;
         this.targetSlotParam = targetSlotParam;
     }
@@ -234,68 +229,44 @@ public class HourlyConsultTasklet implements Tasklet {
     }
 
     // ═══════════════════════════════════════════════════════
-    //  [변경] 키워드 집계: MySQL 원문 → Nori analyze
-    //  기존: ES Terms Aggregation (summary.keywords — 해지방어 20~30%만 커버)
-    //  변경: 유진님 방식과 동일 — consultation_raw_texts 고객 발화 → ES _analyze API
-    //         전체 상담 100% 커버리지 확보
+    //  [변경] 키워드 집계: ES consult-keyword-index 직접 집계
+    //  기존: MySQL 원문 → ES _analyze API × N건
+    //  변경: ES terms aggregation 1회 (KeywordRankTasklet과 동일 패턴)
     // ═══════════════════════════════════════════════════════
 
     private Map<String, Long> aggregateKeywordsFromRawText(
             LocalDateTime start, LocalDateTime end) throws Exception {
 
-        // MySQL에서 해당 시간대 원문 조회
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList("""
-                SELECT rt.raw_text_json, cu.grade_code
-                FROM consultation_results cr
-                JOIN consultation_raw_texts rt ON cr.consult_id = rt.consult_id
-                JOIN customers cu ON cr.customer_id = cu.customer_id
-                WHERE cr.created_at >= ? AND cr.created_at < ?
-                ORDER BY cr.consult_id
-                """, start, end);
+        String startStr = start.toString();
+        String endStr = end.toString();
+
+        SearchResponse<Void> response = elasticsearchClient.search(s -> s
+                .index("consult-keyword-index")
+                .size(0)
+                .query(q -> q
+                    .range(r -> r
+                        .date(d -> d
+                            .field("date")
+                            .gte(startStr)
+                            .lt(endStr)
+                        )
+                    )
+                )
+                .aggregations("slot_keywords", a -> a
+                    .terms(t -> t.field("customer.search").size(TOP_KEYWORD_SIZE * 2))
+                ),
+            Void.class
+        );
 
         Map<String, Long> keywordCount = new LinkedHashMap<>();
 
-        for (Map<String, Object> row : rows) {
-            String rawJson = (String) row.get("raw_text_json");
-            String content = extractCustomerText(rawJson);
-            if (content == null || content.length() < 2) continue;
+        response.aggregations().get("slot_keywords").sterms()
+            .buckets().array().stream()
+            .filter(b -> !"null".equals(b.key().stringValue())
+                         && b.key().stringValue().length() > 1)
+            .forEach(b -> keywordCount.put(b.key().stringValue(), b.docCount()));
 
-            // 유진님의 ElasticsearchAnalyzeService 그대로 사용
-            List<String> tokens = analyzeService.analyze(content);
-            for (String token : tokens) {
-                keywordCount.merge(token, 1L, Long::sum);
-            }
-        }
-
-        // 빈도 내림차순 정렬 후 상위만 반환
-        return keywordCount.entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                .limit((long) TOP_KEYWORD_SIZE * 2)
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey, Map.Entry::getValue,
-                        (e1, e2) -> e1, LinkedHashMap::new));
-    }
-
-    /**
-     * raw_text_json에서 고객 발화만 추출
-     * 유진님 ConsultationReaderConfig의 rowMapper 로직과 동일
-     */
-    private String extractCustomerText(String rawJson) {
-        if (rawJson == null || rawJson.isBlank()) return null;
-        try {
-            ObjectMapper mapper = new ObjectMapper();
-            JsonNode array = mapper.readTree(rawJson);
-            StringBuilder sb = new StringBuilder();
-            for (JsonNode node : array) {
-                if (!"고객".equals(node.path("speaker").asText(""))) continue;
-                String msg = node.path("text").asText("");
-                if (msg.length() >= 2) sb.append(msg).append(" ");
-            }
-            return sb.length() > 0 ? sb.toString() : null;
-        } catch (Exception e) {
-            log.warn("[HourlyConsult] raw_text_json 파싱 실패: {}", e.getMessage());
-            return null;
-        }
+        return keywordCount;
     }
 
     // ═══════════════════════════════════════════════════════
