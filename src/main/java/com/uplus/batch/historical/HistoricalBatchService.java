@@ -19,8 +19,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   인바운드: consultation_results + raw_texts + 연관 테이블 생성 (created_at = targetDate)
  *             result_event_status  → REQUESTED
  *             summary_event_status → requested
- *   아웃바운드: consultation_results + raw_texts + retention_analysis 더미 데이터 생성
- *              (AI 추출·요약 트리거 없음 — retention_analysis에 더미 데이터 직접 삽입)
+ *   아웃바운드: consultation_results + raw_texts + 연관 테이블 생성 (created_at = targetDate)
+ *              result_event_status  → REQUESTED (consultation_type=OUTBOUND)
+ *              summary_event_status → requested
  *
  * [ExtractionScheduler — 별도 배치]
  *   result_event_status=REQUESTED 감지 (인바운드 분)
@@ -125,8 +126,7 @@ public class HistoricalBatchService {
      *
      * <ul>
      *   <li>인바운드: 각 청크를 독립 트랜잭션으로 커밋 후 AI·요약 이벤트 등록</li>
-     *   <li>아웃바운드: 각 청크를 독립 트랜잭션으로 커밋. retention_analysis 더미 데이터 포함.
-     *       AI 추출·요약 트리거 없음.</li>
+     *   <li>아웃바운드: 각 청크를 독립 트랜잭션으로 커밋 후 AI·요약 이벤트 등록</li>
      * </ul>
      */
     private void processDate(LocalDate targetDate, int inboundTotal, int outboundTotal) {
@@ -176,6 +176,8 @@ public class HistoricalBatchService {
                 break;
             }
 
+            outboundConsultationFactory.triggerAiExtraction(result.consultIds(), result.categoryCodes());
+            outboundConsultationFactory.triggerSummaryGeneration(result.consultIds());
             done += result.consultIds().size();
             log.debug("[HistoricalBatch] {} 아웃바운드 {}/{}건 등록", targetDate, done, total);
         }

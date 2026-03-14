@@ -226,7 +226,7 @@ public class SyntheticConsultationFactory {
                     : 60  + random.nextInt(241);  // CHATTING: 60~300s
 
             String[] iam  = pickIamTemplate(categoryCode, random.nextInt(10));
-            String   memo = "[SYNTHETIC] " + iam[2];
+            String   memo = iam[2];
 
             // ── PreparedStatementCreator는 effectively-final 변수만 캡처 가능 ──
             final int    empId      = agent.empId();

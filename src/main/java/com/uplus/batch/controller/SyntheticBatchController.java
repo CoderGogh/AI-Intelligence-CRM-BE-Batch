@@ -35,7 +35,6 @@ import java.util.List;
  *   batchSize      회차당 생성 건수  (1~100,   default: 5)
  *   runCount       배치 실행 횟수    (1~20,    default: 1)
  *   intervalMs     실행 간격 (ms)    (0~60000, default: 0)
- *   useAiApi       AI API 사용 여부  (default: false, 인바운드 분에만 적용)
  * </pre>
  */
 @Slf4j
@@ -54,7 +53,7 @@ import java.util.List;
           consultation_results    — 상담 결과서
           consultation_raw_texts  — 상담 원문 (카테고리·채널별 템플릿)
           client_review / customer_risk_logs / consult_product_logs
-        Step 2 (useAiApi=true 시)
+        Step 2 (항상)
           result_event_status REQUESTED → ExtractionScheduler → Gemini API
         Step 3 (항상)
           summary_event_status REQUESTED → ConsultationSummaryGenerator → MongoDB
@@ -65,9 +64,11 @@ import java.util.List;
         Step 1 (1 트랜잭션)
           consultation_results    — 아웃바운드 결과서 (CHN 카테고리, CALL 채널)
           consultation_raw_texts  — 아웃바운드 원문 (상담사가 먼저 전화)
-          retention_analysis      — CONVERTED/REJECTED + V34 컬럼 더미 데이터
           client_review / customer_risk_logs
-        (AI 추출·요약 트리거 없음)
+        Step 2 (항상)
+          result_event_status REQUESTED → ExtractionScheduler → Gemini API
+        Step 3 (항상)
+          summary_event_status REQUESTED → ConsultationSummaryGenerator → MongoDB
         ```
         """
 )
@@ -86,19 +87,8 @@ public class SyntheticBatchController {
             - `100`: 전체 아웃바운드
             - `30` : batchSize 중 30%는 아웃바운드, 나머지 70%는 인바운드 (기본값)
 
-            **useAiApi** — 인바운드 분에만 적용
-            - `false`: AI 호출 없음. 비용 없이 파이프라인 구조 검증. (기본값)
-            - `true` : Gemini API 실제 호출. ExtractionScheduler(60초)가 처리. 비용 발생.
-            아웃바운드 분은 이 파라미터와 무관하게 AI 트리거가 발생하지 않습니다.
-
-            **파라미터 조합 예시**
-
-            | 목적 | outboundRatio | batchSize | useAiApi |
-            |------|--------------|-----------|----------|
-            | 인바운드 전용 | 0 | 10 | false |
-            | 아웃바운드 전용 | 100 | 10 | - |
-            | 7:3 혼합 (기본) | 30 | 10 | false |
-            | 5:5 혼합 + AI | 50 | 10 | true |
+            인바운드·아웃바운드 모두 항상 Gemini AI 추출이 트리거됩니다.
+            ExtractionScheduler(60초)가 result_event_status=REQUESTED를 감지하여 처리합니다.
             """
     )
     @ApiResponses({
@@ -116,8 +106,7 @@ public class SyntheticBatchController {
                             "outboundRatio": 30,
                             "batchSize": 10,
                             "runCount": 1,
-                            "intervalMs": 0,
-                            "useAiApi": false
+                            "intervalMs": 0
                           },
                           "result": {
                             "totalInserted": 10,
@@ -129,8 +118,7 @@ public class SyntheticBatchController {
                                 "consultIds": [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010],
                                 "inboundCount": 7,
                                 "outboundCount": 3,
-                                "inboundCategoryCodes": ["M_CHN_04", "M_FEE_01", "M_TRB_02", "M_CHN_06", "M_ADD_03", "M_ETC_01", "M_DEV_02"],
-                                "aiExtractTriggered": false
+                                "inboundCategoryCodes": ["M_CHN_04", "M_FEE_01", "M_TRB_02", "M_CHN_06", "M_ADD_03", "M_ETC_01", "M_DEV_02"]
                               }
                             ]
                           }
@@ -178,14 +166,7 @@ public class SyntheticBatchController {
                 example = "0",
                 schema = @Schema(type = "integer", minimum = "0", maximum = "60000", defaultValue = "0")
             )
-            @RequestParam(defaultValue = "0") long intervalMs,
-
-            @Parameter(
-                description = "Gemini AI API 호출 여부. 인바운드 분에만 적용됩니다.",
-                example = "false",
-                schema = @Schema(type = "boolean", defaultValue = "false")
-            )
-            @RequestParam(defaultValue = "false") boolean useAiApi
+            @RequestParam(defaultValue = "0") long intervalMs
     ) throws InterruptedException {
 
         // ── 입력값 검증 ──────────────────────────────────────────────────────
@@ -210,8 +191,8 @@ public class SyntheticBatchController {
         int outboundCount = Math.round((float) batchSize * outboundRatio / 100);
         int inboundCount  = batchSize - outboundCount;
 
-        log.info("[SyntheticBatchController] 수동 실행 시작 — outboundRatio={}%, inbound={}, outbound={}, runCount={}, useAiApi={}",
-                outboundRatio, inboundCount, outboundCount, runCount, useAiApi);
+        log.info("[SyntheticBatchController] 수동 실행 시작 — outboundRatio={}%, inbound={}, outbound={}, runCount={}",
+                outboundRatio, inboundCount, outboundCount, runCount);
 
         long startTime = System.currentTimeMillis();
         List<RunDetail> runs = new ArrayList<>(runCount);
@@ -223,7 +204,6 @@ public class SyntheticBatchController {
 
             List<Long>   allConsultIds        = new ArrayList<>(batchSize);
             List<String> inboundCategoryCodes = null;
-            boolean      aiTriggered          = false;
 
             // ── 인바운드 생성 ──────────────────────────────────────────────
             if (inboundCount > 0) {
@@ -231,10 +211,7 @@ public class SyntheticBatchController {
                 allConsultIds.addAll(inbound.consultIds());
                 inboundCategoryCodes = inbound.categoryCodes();
 
-                if (useAiApi) {
-                    factory.triggerAiExtraction(inbound.consultIds(), inbound.categoryCodes());
-                    aiTriggered = true;
-                }
+                factory.triggerAiExtraction(inbound.consultIds(), inbound.categoryCodes());
                 factory.triggerSummaryGeneration(inbound.consultIds());
             }
 
@@ -242,10 +219,12 @@ public class SyntheticBatchController {
             if (outboundCount > 0) {
                 OutboundConsultationFactory.BatchResult outbound = outboundFactory.executeStep1(outboundCount);
                 allConsultIds.addAll(outbound.consultIds());
+                outboundFactory.triggerAiExtraction(outbound.consultIds(), outbound.categoryCodes());
+                outboundFactory.triggerSummaryGeneration(outbound.consultIds());
             }
 
             runs.add(new RunDetail(runNo, allConsultIds, inboundCount, outboundCount,
-                    inboundCategoryCodes, aiTriggered));
+                    inboundCategoryCodes));
             log.info("[SyntheticBatchController] 회차 {}/{} 완료 — 총 {}건 생성", runNo, runCount, batchSize);
 
             if (i < runCount - 1 && intervalMs > 0) {
@@ -259,7 +238,7 @@ public class SyntheticBatchController {
         log.info("[SyntheticBatchController] 전체 완료 — 총 {}건, 소요 {}ms", total, elapsed);
 
         return ResponseEntity.ok(new BatchRunResult(
-                new RunConfig(outboundRatio, batchSize, runCount, intervalMs, useAiApi),
+                new RunConfig(outboundRatio, batchSize, runCount, intervalMs),
                 new RunSummary(total, elapsed,
                         LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
                         runs)
@@ -293,10 +272,7 @@ public class SyntheticBatchController {
             int runCount,
 
             @Schema(description = "회차 간 대기 시간 (ms)", example = "0")
-            long intervalMs,
-
-            @Schema(description = "AI API 호출 여부 (인바운드 분에만 적용)", example = "false")
-            boolean useAiApi
+            long intervalMs
     ) {}
 
     @Schema(description = "실행 결과 요약")
@@ -333,10 +309,7 @@ public class SyntheticBatchController {
 
             @Schema(description = "인바운드 카테고리 코드 목록. outboundRatio=100이면 null.",
                     example = "[\"M_CHN_04\", \"M_FEE_01\"]", nullable = true)
-            List<String> inboundCategoryCodes,
-
-            @Schema(description = "AI 추출 트리거 여부 (인바운드 분, useAiApi 값과 동일)", example = "false")
-            boolean aiExtractTriggered
+            List<String> inboundCategoryCodes
     ) {}
 
     @Schema(description = "파라미터 오류 응답")
