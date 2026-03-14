@@ -3,6 +3,7 @@ package com.uplus.batch.jobs.daily_report.config;
 import com.uplus.batch.jobs.daily_report.step.customer_risk.CustomerRiskTasklet;
 import com.uplus.batch.jobs.daily_report.step.hourly_consult.HourlyConsultTasklet;
 import com.uplus.batch.jobs.daily_report.step.keyword_rank.KeywordRankTasklet;
+import com.uplus.batch.jobs.daily_report.step.quality_analysis.QualityAnalysisTasklet;
 import com.uplus.batch.jobs.weekly_report.step.performance.PerformanceTasklet;
 import lombok.RequiredArgsConstructor;
 import org.springframework.batch.core.Job;
@@ -38,12 +39,14 @@ public class DailyAdminReportJobConfig {
             Step dailyPerformanceStep,
             Step dailyKeywordStep,
             Step dailyCustomerRiskStep,
-            Step dailyHourlyConsultStep) {
+            Step dailyHourlyConsultStep,
+            Step dailyQualityAnalysisStep) {
         return new JobBuilder("dailyAdminReportJob", jobRepository)
                 .start(dailyPerformanceStep)
                 .next(dailyKeywordStep)
                 .next(dailyCustomerRiskStep)
                 .next(dailyHourlyConsultStep)
+                .next(dailyQualityAnalysisStep)
                 .build();
     }
 
@@ -73,5 +76,12 @@ public class DailyAdminReportJobConfig {
         return new StepBuilder("dailyHourlyConsultStep", jobRepository)
                 .tasklet(hourlyConsultTasklet, transactionManager)
                 .build();
+    }
+
+    @Bean
+    public Step dailyQualityAnalysisStep(QualityAnalysisTasklet qualityAnalysisTasklet) {
+        return new StepBuilder("dailyQualityAnalysisStep", jobRepository)
+            .tasklet(qualityAnalysisTasklet, transactionManager)
+            .build();
     }
 }

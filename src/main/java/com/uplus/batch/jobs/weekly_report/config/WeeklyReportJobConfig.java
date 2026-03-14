@@ -1,6 +1,7 @@
 package com.uplus.batch.jobs.weekly_report.config;
 
 import com.uplus.batch.jobs.common.step.keyword.KeywordStatsTasklet;
+import com.uplus.batch.jobs.daily_report.step.quality_analysis.QualityAnalysisTasklet;
 import com.uplus.batch.jobs.weekly_report.step.performance.PerformanceTasklet;
 import com.uplus.batch.jobs.weekly_report.step.admin.WeeklySubscriptionStatsTasklet;
 import lombok.RequiredArgsConstructor;
@@ -35,11 +36,12 @@ public class WeeklyReportJobConfig {
     private final WeeklySubscriptionStatsTasklet weeklySubscriptionStatsTasklet;
 
     @Bean
-    public Job weeklyAdminReportJob(Step weeklyPerformanceStep) {
+    public Job weeklyAdminReportJob(Step weeklyPerformanceStep, Step weeklyQualityAnalysisStep) {
         return new JobBuilder("weeklyAdminReportJob", jobRepository)
                 .start(weeklyPerformanceStep)
                 .next(weeklyKeywordStatsStep())
                 .next(weeklySubscriptionStatsStep())
+                .next(weeklyQualityAnalysisStep)
                 .build();
     }
 
@@ -62,5 +64,12 @@ public class WeeklyReportJobConfig {
         return new StepBuilder("weeklySubscriptionStatsStep", jobRepository)
                 .tasklet(weeklySubscriptionStatsTasklet, transactionManager)
                 .build();
+    }
+
+    @Bean
+    public Step weeklyQualityAnalysisStep(QualityAnalysisTasklet qualityAnalysisTasklet) {
+        return new StepBuilder("weeklyQualityAnalysisStep", jobRepository)
+            .tasklet(qualityAnalysisTasklet, transactionManager)
+            .build();
     }
 }
