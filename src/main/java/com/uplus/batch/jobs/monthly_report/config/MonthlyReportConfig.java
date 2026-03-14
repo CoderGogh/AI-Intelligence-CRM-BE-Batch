@@ -1,6 +1,7 @@
 package com.uplus.batch.jobs.monthly_report.config;
 
 import com.uplus.batch.jobs.common.step.keyword.KeywordStatsTasklet;
+import com.uplus.batch.jobs.daily_report.step.quality_analysis.QualityAnalysisTasklet;
 import com.uplus.batch.jobs.monthly_report.step.admin.ChurnDefenseStatsTasklet;
 import com.uplus.batch.jobs.monthly_report.step.admin.MonthlySubscriptionStatsTasklet;
 import com.uplus.batch.jobs.monthly_report.step.customer_risk.MonthlyCustomerRiskTasklet;
@@ -41,13 +42,14 @@ public class MonthlyReportConfig {
     private final ChurnDefenseStatsTasklet churnDefenseStatsTasklet;
 
     @Bean
-    public Job monthlyAdminReportJob(Step monthlyPerformanceStep) {
+    public Job monthlyAdminReportJob(Step monthlyPerformanceStep, Step monthlyQualityAnalysisStep) {
         return new JobBuilder("monthlyAdminReportJob", jobRepository)
                 .start(monthlyPerformanceStep)
                 .next(monthlyKeywordStatsStep())
                 .next(monthlySubscriptionStatsStep())
                 .next(monthlyChurnDefenseStep())
                 .next(monthlyCustomerRiskStep())
+                .next(monthlyQualityAnalysisStep)
                 .build();
     }
 
@@ -84,5 +86,12 @@ public class MonthlyReportConfig {
         return new StepBuilder("monthlyCustomerRiskStep", jobRepository)
                 .tasklet(monthlyCustomerRiskTasklet, transactionManager)
                 .build();
+    }
+
+    @Bean
+    public Step monthlyQualityAnalysisStep(QualityAnalysisTasklet qualityAnalysisTasklet) {
+        return new StepBuilder("monthlyQualityAnalysisStep", jobRepository)
+            .tasklet(qualityAnalysisTasklet, transactionManager)
+            .build();
     }
 }
