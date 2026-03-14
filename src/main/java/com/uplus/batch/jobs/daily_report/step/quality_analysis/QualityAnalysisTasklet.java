@@ -65,7 +65,7 @@ public class QualityAnalysisTasklet implements Tasklet {
         .average().orElse(0.0);
 
     // 4. 결과 업데이트
-    Update update = new Update().set("performanceSummary.qualityScore", Math.round(avgScore * 10.0) / 10.0);
+    Update update = new Update().set("performanceSummary.avgQualityScore", Math.round(avgScore * 100.0) / 100.0);
     mongoTemplate.updateFirst(query, update, targetCollection);
 
     return RepeatStatus.FINISHED;
