@@ -59,17 +59,14 @@ public class ChurnDefenseStatsTasklet implements Tasklet {
             endAt = lastMonth.withDayOfMonth(lastMonth.lengthOfMonth()).atTime(23, 59, 59);
         }
 
-        log.info("[ChurnDefense] 해지방어 패턴 분석 시작: {} ~ {}", startAt, endAt);
+        log.info("[ChurnDefense] {} ~ {} 집계 시작", startAt, endAt);
 
         // 2. consultation_summary에서 해지 의향(cancellation.intent=true) 건 조회
         Query query = new Query(Criteria.where("consultedAt").gte(startAt).lte(endAt)
                 .and("cancellation.intent").is(true));
         List<Document> intentDocs = mongoTemplate.find(query, Document.class, "consultation_summary");
 
-        log.info("[ChurnDefense] 해지 의향 상담 건수: {}건", intentDocs.size());
-
         if (intentDocs.isEmpty()) {
-            log.info("[ChurnDefense] 해지 의향 데이터 없음 — 스킵");
             return RepeatStatus.FINISHED;
         }
 
@@ -86,6 +83,8 @@ public class ChurnDefenseStatsTasklet implements Tasklet {
         Map<String, Map<String, Integer>> customerTypeReasonMap = new HashMap<>();
         // 방어 액션별: action → {attempts, success}
         Map<String, int[]> actionMap = new HashMap<>();
+        // 액션별 불만 사유: action → reason → {attempts, success}
+        Map<String, Map<String, int[]>> actionReasonMap = new HashMap<>();
 
         // 4. 데이터 순회 및 집계
         for (Document doc : intentDocs) {
@@ -156,6 +155,15 @@ public class ChurnDefenseStatsTasklet implements Tasklet {
                     int[] aCounts = actionMap.computeIfAbsent(action, k -> new int[2]);
                     aCounts[0]++;
                     if (defenseSuccess) aCounts[1]++;
+
+                    // 액션별 불만 사유 교차 집계
+                    if (complaintReason != null && !complaintReason.isBlank()) {
+                        int[] arStats = actionReasonMap
+                                .computeIfAbsent(action, k -> new HashMap<>())
+                                .computeIfAbsent(complaintReason, k -> new int[2]);
+                        arStats[0]++;
+                        if (defenseSuccess) arStats[1]++;
+                    }
                 }
             }
         }
@@ -176,6 +184,7 @@ public class ChurnDefenseStatsTasklet implements Tasklet {
                 .map(e -> {
                     int[] s = e.getValue();
                     int avgDur = s[3] > 0 ? s[2] / s[3] : 0;
+
                     return new Document("reason", e.getKey())
                             .append("attempts", s[0])
                             .append("successCount", s[1])
@@ -201,23 +210,33 @@ public class ChurnDefenseStatsTasklet implements Tasklet {
                 .collect(Collectors.toList());
         churnDefense.put("byCustomerType", byCustomerType);
 
-        // ── 방어 액션별 (시도 건수 내림차순) ──
-        List<Document> byAction = actionMap.entrySet().stream()
+        // ── 방어 액션별 (시도 건수 내림차순, rank 부여) ──
+        List<Map.Entry<String, int[]>> sortedGlobalActions = actionMap.entrySet().stream()
                 .sorted((a, b) -> Integer.compare(b.getValue()[0], a.getValue()[0]))
-                .map(e -> {
-                    int attempts = e.getValue()[0];
-                    int success = e.getValue()[1];
-                    return new Document("action", e.getKey())
-                            .append("attempts", attempts)
-                            .append("successRate", calcRate(success, attempts));
-                })
                 .collect(Collectors.toList());
-        churnDefense.put("byAction", byAction);
 
-        log.info("[ChurnDefense] 집계 완료 — 시도: {}건, 성공: {}건, 성공률: {}%, 평균소요: {}초",
-                totalAttempts, successCount, successRate, avgDurationSec);
-        log.info("[ChurnDefense] 불만사유 {}종, 고객유형 {}종, 액션 {}종",
-                complaintReasons.size(), byCustomerType.size(), byAction.size());
+        List<Document> byAction = new ArrayList<>();
+        for (int i = 0; i < sortedGlobalActions.size(); i++) {
+            var entry = sortedGlobalActions.get(i);
+            int attempts = entry.getValue()[0];
+            int success = entry.getValue()[1];
+
+            // 해당 액션의 불만 사유별 분석
+            Map<String, int[]> reasons = actionReasonMap.getOrDefault(entry.getKey(), Map.of());
+            List<Document> reasonDocs = reasons.entrySet().stream()
+                    .sorted((x, y) -> Integer.compare(y.getValue()[0], x.getValue()[0]))
+                    .map(r -> new Document("reason", r.getKey())
+                            .append("attempts", r.getValue()[0])
+                            .append("successRate", calcRate(r.getValue()[1], r.getValue()[0])))
+                    .collect(Collectors.toList());
+
+            byAction.add(new Document("action", entry.getKey())
+                    .append("attempts", attempts)
+                    .append("successRate", calcRate(success, attempts))
+                    .append("rank", i + 1)
+                    .append("byReason", reasonDocs));
+        }
+        churnDefense.put("byAction", byAction);
 
         // 6. monthly_report_snapshot에 upsert
         Query upsertQuery = new Query(
@@ -231,8 +250,8 @@ public class ChurnDefenseStatsTasklet implements Tasklet {
                 .setOnInsert("endAt", endAt);
 
         mongoTemplate.upsert(upsertQuery, update, "monthly_report_snapshot");
-        log.info("[ChurnDefense] monthly_report_snapshot 저장 완료");
 
+        log.info("[ChurnDefense] {} ~ {} 집계 완료", startAt, endAt);
         return RepeatStatus.FINISHED;
     }
 
