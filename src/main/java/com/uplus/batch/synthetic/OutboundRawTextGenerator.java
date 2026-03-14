@@ -3,7 +3,10 @@ package com.uplus.batch.synthetic;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -65,9 +68,34 @@ public class OutboundRawTextGenerator {
             String iamAction
     ) {}
 
-    private static final List<OutboundTemplate> TEMPLATES = new ArrayList<>();
+    /** CHN 계열 (해지/재약정) 템플릿 */
+    private static final List<OutboundTemplate> TEMPLATES     = new ArrayList<>();
+    /** FEE 계열 (요금 불만 이탈 위험) 템플릿 */
+    private static final List<OutboundTemplate> FEE_TEMPLATES = new ArrayList<>();
+    /** TRB 계열 (품질 불만 이탈 위험) 템플릿 */
+    private static final List<OutboundTemplate> TRB_TEMPLATES = new ArrayList<>();
 
-    static { buildTemplates(); }
+    private static final Map<String, List<OutboundTemplate>> TEMPLATE_MAP     = new LinkedHashMap<>();
+    private static final Map<String, List<OutboundTemplate>> FEE_TEMPLATE_MAP = new LinkedHashMap<>();
+    private static final Map<String, List<OutboundTemplate>> TRB_TEMPLATE_MAP = new LinkedHashMap<>();
+
+    static {
+        buildChnTemplates();
+        buildFeeTemplates();
+        buildTrbTemplates();
+        for (OutboundTemplate t : TEMPLATES) {
+            String key = "CONVERTED".equals(t.callResult()) ? "CONVERTED" : t.outboundCategory();
+            TEMPLATE_MAP.computeIfAbsent(key, k -> new ArrayList<>()).add(t);
+        }
+        for (OutboundTemplate t : FEE_TEMPLATES) {
+            String key = "CONVERTED".equals(t.callResult()) ? "CONVERTED" : t.outboundCategory();
+            FEE_TEMPLATE_MAP.computeIfAbsent(key, k -> new ArrayList<>()).add(t);
+        }
+        for (OutboundTemplate t : TRB_TEMPLATES) {
+            String key = "CONVERTED".equals(t.callResult()) ? "CONVERTED" : t.outboundCategory();
+            TRB_TEMPLATE_MAP.computeIfAbsent(key, k -> new ArrayList<>()).add(t);
+        }
+    }
 
     private static Turn c(String text) { return new Turn("고객", text); }
     private static Turn a(String text) { return new Turn("상담사", text); }
@@ -76,7 +104,7 @@ public class OutboundRawTextGenerator {
     //  템플릿 정의
     // ─────────────────────────────────────────────────────────────────────────
 
-    private static void buildTemplates() {
+    private static void buildChnTemplates() {
         buildConverted();
         buildRejectedCost();
         buildRejectedNoNeed();
@@ -86,7 +114,23 @@ public class OutboundRawTextGenerator {
         buildRejectedOther();
     }
 
-    // ── CONVERTED (5종) ───────────────────────────────────────────────────────
+    private static void buildFeeTemplates() {
+        buildFeeConverted();
+        buildFeeRejectedCost();
+        buildFeeRejectedConsider();
+        buildFeeRejectedSwitch();
+        buildFeeRejectedOther();
+    }
+
+    private static void buildTrbTemplates() {
+        buildTrbConverted();
+        buildTrbRejectedDissatisfied();
+        buildTrbRejectedConsider();
+        buildTrbRejectedSwitch();
+        buildTrbRejectedOther();
+    }
+
+    // ── CHN CONVERTED (20종) ──────────────────────────────────────────────────
 
     /** CONV-1: BNFT_DISCOUNT — 요금 과다 고객에게 직접 할인 제안 → 재약정 전환 */
     private static void buildConverted() {
@@ -1030,16 +1074,324 @@ public class OutboundRawTextGenerator {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    //  FEE 계열 템플릿 (요금 불만 이탈 위험 고객 대상)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** FEE-CONV-1: 요금제 하향 + 부가서비스 정리 → 유지 전환 */
+    private static void buildFeeConverted() {
+        FEE_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 최근 요금 관련 불편을 겪고 계신다는 이력이 확인되어 연락드렸습니다."),
+                c("네, 매달 요금이 너무 많이 나와서 해지를 고민하고 있었어요."),
+                a("고객님 청구 내역을 확인하니 미사용 부가서비스 3개가 등록되어 있습니다. 이를 정리하고 요금제도 한 단계 낮추시면 월 16,500원 절감이 가능합니다."),
+                c("어떤 부가서비스가 붙어 있는지 몰랐어요. 다 정리해주세요."),
+                a("지금 바로 처리해드리겠습니다. 요금제 조정까지 완료하면 다음 달부터 절감된 요금으로 청구됩니다."),
+                c("그렇게 해주신다면 유지하겠습니다."),
+                a("감사합니다. 부가서비스 해지 및 요금제 최적화 처리 완료해드리겠습니다. 좋은 하루 보내세요.")
+            ),
+            "CONVERTED", null, "COST_HIGH", "OPT_DOWNGRADE",
+            "요금 과다 이탈 위험 고객 요금 최적화 제안 아웃바운드",
+            "부가서비스 정리 및 요금제 하향 조정 후 유지 전환 완료"
+        ));
+
+        /** FEE-CONV-2: 직접 할인 제안 수락 */
+        FEE_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 요금 부담 관련하여 도움드리고자 연락드렸습니다."),
+                c("사실 요금이 부담돼서 다른 통신사 알아보고 있었어요."),
+                a("불편을 드려 죄송합니다. 고객님께 재약정 시 월 13,200원 직접 할인을 제공해드릴 수 있습니다. 연간 158,400원 절감 효과입니다."),
+                c("그 정도면 확실히 부담이 줄겠네요."),
+                a("추가로 결합 할인 재적용도 함께 진행해드릴 수 있습니다."),
+                c("그렇게 해주신다면 U+에서 유지하겠습니다."),
+                a("감사합니다. 직접 할인 및 결합 재적용 처리 완료해드리겠습니다. 좋은 하루 보내세요.")
+            ),
+            "CONVERTED", null, "COST_HIGH", "BNFT_DISCOUNT",
+            "요금 부담 타사 검토 고객 직접 할인 제안 아웃바운드",
+            "재약정 직접 할인 및 결합 재적용 안내 후 유지 전환 완료"
+        ));
+
+        /** FEE-CONV-3: 청구 오류 정정 + 요금 최적화 */
+        FEE_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 고객만족팀입니다. 최근 청구 관련 불편이 있으셨다는 이력이 확인되어 연락드렸습니다."),
+                c("네, 지난달 요금이 갑자기 많이 나와서 뭔가 잘못된 것 같았어요."),
+                a("청구 내역 확인해보니 할인 적용이 누락되어 있었습니다. 즉시 정정 처리해드리고 이번 달 청구에서 차감해드리겠습니다."),
+                c("그랬군요. 얼마나 잘못 청구된 건가요?"),
+                a("총 22,000원이 과청구되었습니다. 이번 달 청구서에서 전액 공제해드리겠습니다. 추가로 요금 최적화 방안도 안내드릴까요?"),
+                c("네, 같이 확인해 주세요."),
+                a("감사합니다. 과청구 정정 및 요금 최적화 처리 완료해드리겠습니다. 불편을 드려 죄송합니다. 좋은 하루 보내세요.")
+            ),
+            "CONVERTED", null, "ETC_BILLING", "ADM_GUIDE",
+            "청구 오류 이탈 위험 고객 정정 및 최적화 제안 아웃바운드",
+            "과청구 정정 및 요금 최적화 안내 후 유지 전환 완료"
+        ));
+    }
+
+    /** FEE-COST-1: 최대 할인 제안했으나 경쟁사보다 여전히 비쌈 */
+    private static void buildFeeRejectedCost() {
+        FEE_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 요금 부담 관련하여 도움드리고자 연락드렸습니다."),
+                c("네, 요금이 너무 비싸서 KT로 이동하려고 알아보고 있어요."),
+                a("고객님을 위해 월 최대 16,500원 직접 할인을 제공해드릴 수 있습니다."),
+                c("KT 신규 가입 혜택이 훨씬 더 많아요. 그쪽이 첫 6개월은 거의 절반 요금이거든요."),
+                a("추가로 사은품 지원도 가능합니다. 타사 혜택과 장기적으로 비교해보시면 U+가 유리합니다."),
+                c("당장 요금 절감이 필요한 상황이라 타사로 가겠습니다."),
+                a("고객님 결정 이해합니다. 추후 다시 필요하시면 언제든 연락 주세요. 좋은 하루 보내세요.")
+            ),
+            "REJECTED", "COST", "COST_HIGH", "BNFT_DISCOUNT",
+            "요금 불만 타사 전환 고객 할인 제안 아웃바운드",
+            "최대 할인 제안하였으나 경쟁사 요금 대비 비용 사유로 거절 확인"
+        ));
+
+        /** FEE-COST-2: 할인폭 기대에 미치지 못함 */
+        FEE_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 요금 부담 관련하여 도움드리고자 연락드렸습니다."),
+                c("요금이 매달 부담돼서 고민이에요."),
+                a("고객님께 월 11,000원 직접 할인 혜택을 제공해드릴 수 있습니다."),
+                c("그 정도로는 부족해요. 최소 2만원 이상 줄어야 유지할 수 있어요."),
+                a("현재 시스템상 최대 할인 범위가 11,000원입니다. 요금제 하향 조정도 함께 적용하면 추가 절감도 가능합니다."),
+                c("그래도 여전히 제가 원하는 만큼이 안 되네요. 이번 달로 해지하겠습니다."),
+                a("고객님 결정 존중합니다. 불편을 드려 죄송합니다. 좋은 하루 보내세요.")
+            ),
+            "REJECTED", "COST", "COST_HIGH", "OPT_DOWNGRADE",
+            "요금 절감 기대 고객 할인 제안 아웃바운드",
+            "요금제 조정 및 할인 제안하였으나 절감 폭 불만족으로 거절 확인"
+        ));
+    }
+
+    /** FEE-CONSIDER-1: 할인 조건 검토 후 결정 유보 */
+    private static void buildFeeRejectedConsider() {
+        FEE_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 요금 부담 관련하여 도움드리고자 연락드렸습니다."),
+                c("요금이 부담되긴 한데, 지금 당장 결정하기가 어려워요."),
+                a("고객님을 위해 월 13,200원 직접 할인과 요금제 최적화를 동시에 제안드릴 수 있습니다."),
+                c("조건이 나쁘지는 않은데, 다른 통신사도 좀 더 알아보고 싶어요."),
+                a("충분히 이해합니다. 이 혜택은 이번 달까지 적용 가능한 조건입니다. 언제든 결정하시면 연락 주세요."),
+                c("네, 알겠습니다. 연락드릴게요."),
+                a("감사합니다. 편하신 시간에 연락 주세요. 좋은 하루 보내세요.")
+            ),
+            "REJECTED", "CONSIDER", "COST_HIGH", "ADM_GUIDE",
+            "요금 부담 이탈 위험 고객 할인 제안 아웃바운드",
+            "할인 및 요금 최적화 제안 후 고객 추가 검토 요청으로 결정 유보"
+        ));
+    }
+
+    /** FEE-SWITCH-1: 이미 경쟁사로 이동 결정 */
+    private static void buildFeeRejectedSwitch() {
+        FEE_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 요금 관련 안내드리고자 연락드렸습니다."),
+                c("사실 이미 SK로 번호이동 신청을 했어요."),
+                a("아, 그러셨군요. 혹시 마음이 바뀌실 경우를 대비해 저희가 제공할 수 있는 조건을 말씀드려도 될까요?"),
+                c("이미 결제까지 완료했어요. 되돌리기가 어렵습니다."),
+                a("고객님 결정 충분히 이해합니다. 그동안 U+를 이용해 주셔서 진심으로 감사드립니다."),
+                c("네, 감사합니다."),
+                a("편안한 하루 되세요.")
+            ),
+            "REJECTED", "SWITCH", "COMP_BENEFIT", "ADM_CLOSE_FAIL",
+            "요금 불만 타사 이동 완료 고객 방어 아웃바운드",
+            "이미 타사 번호이동 완료로 전환 방어 불가 확인"
+        ));
+    }
+
+    /** FEE-OTHER-1: 사업 이전·폐업 등 개인 사정 */
+    private static void buildFeeRejectedOther() {
+        FEE_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 요금 관련 도움드리고자 연락드렸습니다."),
+                c("사실 이번에 사업을 정리하게 돼서 법인 회선 자체를 다 해지해야 해요."),
+                a("그러셨군요. 사업 정리로 인한 해지의 경우 위약금 면제 적용 가능한 경우도 있습니다. 확인해드릴까요?"),
+                c("그렇게 해주시면 감사하죠."),
+                a("관련 서류 안내드리겠습니다. 사업자등록증 폐업 신고 서류 지참 시 위약금 면제 처리 가능합니다."),
+                c("알겠습니다. 그냥 해지 처리 진행해주세요."),
+                a("네, 말씀해주신 사유로 해지 처리 도와드리겠습니다. 그동안 이용해 주셔서 감사합니다. 좋은 하루 보내세요.")
+            ),
+            "REJECTED", "OTHER", "ETC_BILLING", "ADM_CLOSE_FAIL",
+            "사업 폐업 법인 회선 해지 이탈 방어 아웃바운드",
+            "위약금 면제 안내 진행하였으나 사업 정리 기타 사유로 거절 확인"
+        ));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    //  TRB 계열 템플릿 (품질 불만 이탈 위험 고객 대상)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** TRB-CONV-1: 기술 점검 + 1개월 요금 감면 → 유지 전환 */
+    private static void buildTrbConverted() {
+        TRB_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 고객만족팀입니다. 인터넷 품질 불편을 겪고 계신다는 이력이 확인되어 연락드렸습니다."),
+                c("맞아요. 요즘 인터넷이 자주 느려지고 끊겨서 정말 불편해요. 해지 생각하고 있었어요."),
+                a("불편을 드려 정말 죄송합니다. 즉시 기술팀 원격 점검을 진행해드리고, 불편에 대한 보상으로 이번 달 요금 전액 감면을 제공해드리겠습니다."),
+                c("요금 감면까지 해주는 건가요?"),
+                a("네, 원격 점검에서 해결되지 않으면 기사 출동도 무료로 지원해드립니다. 점검 예약 지금 바로 잡아드릴까요?"),
+                c("그렇게 해주신다면 한 번 더 기회를 드릴게요."),
+                a("감사합니다. 기술 점검 예약 및 요금 감면 처리 완료해드리겠습니다. 좋은 하루 보내세요.")
+            ),
+            "CONVERTED", null, "QUAL_SPEED", "PHYS_TECH_CHECK",
+            "인터넷 품질 불만 이탈 위험 고객 기술 점검 및 보상 아웃바운드",
+            "기술 점검 예약 및 요금 감면 안내 후 유지 전환 완료"
+        ));
+
+        /** TRB-CONV-2: 현장 출동 + 속도 보장제 가입 */
+        TRB_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 기술지원팀입니다. 반복적인 인터넷 장애로 불편을 겪고 계신다는 이력이 확인되어 연락드렸습니다."),
+                c("네, 이미 두 번이나 점검을 받았는데 여전히 불안정해요."),
+                a("반복적인 불편을 드려 진심으로 죄송합니다. 이번에는 전담 기술팀이 직접 방문하여 장비 교체 여부까지 포함하여 정밀 점검을 진행해드리겠습니다. 속도 보장제도 무료로 가입해드리겠습니다."),
+                c("속도 보장제가 뭔가요?"),
+                a("약속 속도 미달 시 자동으로 요금이 환급되는 제도입니다. 이번에 근본적으로 해결해드리겠습니다."),
+                c("알겠습니다. 이번에 제대로 해결되면 유지하겠습니다."),
+                a("반드시 해결해드리겠습니다. 방문 일정 잡아드리겠습니다. 감사합니다. 좋은 하루 보내세요.")
+            ),
+            "CONVERTED", null, "QUAL_TECH", "PHYS_TECH_CHECK",
+            "반복 인터넷 장애 이탈 위험 고객 전담 출동 및 보장제 아웃바운드",
+            "전담 기술팀 출동 및 속도 보장제 가입 안내 후 유지 전환 완료"
+        ));
+
+        /** TRB-CONV-3: 통화 품질 불만 고객 기지국 개선 안내 + 보상 */
+        TRB_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 고객만족팀입니다. 통화 품질 불편을 겪고 계신다는 이력이 확인되어 연락드렸습니다."),
+                c("네, 집 근처에서 통화가 자주 끊기고 음질이 너무 나빠요."),
+                a("불편을 드려 죄송합니다. 고객님 거주 지역 기지국 점검 결과 이번 달 내 설비 개선이 예정되어 있습니다. 완료 후 품질이 크게 향상될 예정입니다."),
+                c("그게 언제 완료되나요?"),
+                a("이번 달 말까지 완료 예정입니다. 완료 전까지 불편에 대한 보상으로 다음 달 요금 50% 감면을 제공해드리겠습니다."),
+                c("그렇다면 좀 더 기다려볼게요."),
+                a("감사합니다. 요금 감면 처리 완료해드리겠습니다. 개선 완료 후 SMS로 안내드리겠습니다. 좋은 하루 보내세요.")
+            ),
+            "CONVERTED", null, "QUAL_TECH", "ADM_GUIDE",
+            "통화 품질 불만 이탈 위험 고객 기지국 개선 안내 아웃바운드",
+            "기지국 개선 일정 안내 및 요금 감면 보상 후 유지 전환 완료"
+        ));
+    }
+
+    /** TRB-DISSATISFIED-1: 반복 민원 누적 → 이미 이탈 의사 확정 */
+    private static void buildTrbRejectedDissatisfied() {
+        TRB_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 고객만족팀입니다. 인터넷 품질 관련 불편을 겪고 계신다는 이력이 확인되어 연락드렸습니다."),
+                c("이미 세 번이나 기사 왔다 갔는데 매번 똑같아요. 이번엔 아무 말씀 안 하셔도 해지할 거예요."),
+                a("반복적인 불편을 드려 정말 죄송합니다. 이번에는 기술팀장이 직접 출동하여 원인을 완전히 해결해드리겠습니다."),
+                c("더 이상 믿음이 가지 않아요. 이미 SK로 이동하기로 결정했어요."),
+                a("고객님의 불편한 마음 충분히 이해합니다. 혹시 마지막으로 한 번만 더 기회를 주신다면 이번에는 반드시 해결해드리겠습니다."),
+                c("아니요, 이번 결정은 확실합니다."),
+                a("고객님 의사 존중합니다. 그동안 이용해 주셔서 감사합니다. 편안한 하루 되세요.")
+            ),
+            "REJECTED", "DISSATISFIED", "QUAL_TECH", "ADM_CLOSE_FAIL",
+            "반복 장애 누적 이탈 위험 고객 방어 아웃바운드",
+            "기술팀장 출동 제안하였으나 반복 불만 누적으로 거절 확인"
+        ));
+
+        /** TRB-DISSATISFIED-2: 속도 불만 지속, 보상도 부족하다고 거절 */
+        TRB_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 기술지원팀입니다. 인터넷 속도 불만이 지속되고 계신다는 이력이 확인되어 연락드렸습니다."),
+                c("네, 가입할 때 약속한 속도의 절반도 안 나와요. 이게 몇 달째 계속되고 있어요."),
+                a("불편을 드려 정말 죄송합니다. 즉시 원격 점검 후 기사 출동까지 진행해드리고, 1개월 요금 감면을 보상으로 제공해드리겠습니다."),
+                c("1개월 요금 감면으로는 이 불편을 보상하기에 너무 적어요. 몇 달 동안 제대로 된 서비스를 못 받았는데요."),
+                a("말씀 충분히 이해합니다. 추가 보상을 검토해드릴 수 있습니다."),
+                c("이미 다른 통신사로 결정했어요. 더 이상 기회를 드리기 어렵습니다."),
+                a("고객님의 결정 이해합니다. 그동안 불편을 드려 다시 한 번 사과드립니다. 좋은 하루 보내세요.")
+            ),
+            "REJECTED", "DISSATISFIED", "QUAL_SPEED", "ADM_CLOSE_FAIL",
+            "인터넷 속도 불만 지속 고객 보상 제안 아웃바운드",
+            "요금 감면 보상 제안하였으나 품질 불만족 지속으로 거절 확인"
+        ));
+    }
+
+    /** TRB-CONSIDER-1: 이번 점검 결과 보고 결정 유보 */
+    private static void buildTrbRejectedConsider() {
+        TRB_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 고객만족팀입니다. 인터넷 품질 불편으로 해지를 고려 중이시다는 이력이 확인되어 연락드렸습니다."),
+                c("네, 요즘 속도가 너무 불안정해서 불편해요."),
+                a("불편을 드려 죄송합니다. 즉시 기술 점검 예약을 잡아드리겠습니다. 점검 후에도 개선이 없으시면 언제든 다시 연락 주세요."),
+                c("일단 점검 한 번 받아보고 결정하겠습니다."),
+                a("감사합니다. 기술 점검 예약 완료해드리겠습니다. 방문 일정 SMS로 안내드리겠습니다."),
+                c("네, 알겠습니다."),
+                a("좋은 하루 보내세요.")
+            ),
+            "REJECTED", "CONSIDER", "QUAL_SPEED", "PHYS_TECH_CHECK",
+            "인터넷 속도 불만 이탈 위험 고객 기술 점검 제안 아웃바운드",
+            "기술 점검 예약 완료 후 고객 점검 결과 확인 후 결정 요청으로 유보"
+        ));
+    }
+
+    /** TRB-SWITCH-1: 이미 타사 품질 비교 완료 후 이동 결정 */
+    private static void buildTrbRejectedSwitch() {
+        TRB_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 기술지원팀입니다. 인터넷 품질 불편으로 해지를 고려 중이시라는 이력이 확인되어 연락드렸습니다."),
+                c("이미 KT 기가인터넷으로 이동하기로 결정했어요. 주변에서 다들 속도가 훨씬 좋다고 해서요."),
+                a("아, 그러셨군요. 혹시 저희도 최신 장비로 업그레이드해드리고 속도 보장제를 무료로 가입해드릴 수 있는데 고려해보시겠어요?"),
+                c("이미 KT 기사 방문 일정도 잡았어요. 결정이 확고합니다."),
+                a("고객님 결정 이해합니다. 그동안 이용해 주셔서 감사합니다. 좋은 하루 보내세요."),
+                c("네, 감사합니다."),
+                a("편안한 하루 되세요.")
+            ),
+            "REJECTED", "SWITCH", "QUAL_SPEED", "ADM_CLOSE_FAIL",
+            "품질 불만 타사 전환 결정 고객 방어 아웃바운드",
+            "업그레이드 및 보장제 제안하였으나 타사 전환 확정으로 거절 확인"
+        ));
+    }
+
+    /** TRB-OTHER-1: 이사로 인한 서비스 해지 (품질 문제가 직접 사유 아님) */
+    private static void buildTrbRejectedOther() {
+        TRB_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 기술지원팀입니다. 서비스 불편 관련하여 도움드리고자 연락드렸습니다."),
+                c("사실 이번에 이사를 가게 됐는데 새 주소에서 서비스가 되는지 모르겠어요."),
+                a("이전 설치로 기존 서비스를 그대로 유지하실 수 있습니다. 이사 주소 확인 후 설치 가능 여부 즉시 확인해드릴까요?"),
+                c("새 주소가 지방 소도시인데, 이전 설치가 가능한지 모르겠어요."),
+                a("주소 말씀해주시면 즉시 확인해드리겠습니다."),
+                c("확인해 봤는데 서비스 안 되는 지역이더라고요. 그냥 해지하겠습니다."),
+                a("네, 서비스 미제공 지역으로의 이사는 위약금 없이 해지 처리 가능합니다. 그동안 이용해 주셔서 감사합니다. 좋은 하루 보내세요.")
+            ),
+            "REJECTED", "OTHER", "QUAL_TECH", "ADM_CLOSE_FAIL",
+            "이사 지역 서비스 불가 고객 이전 설치 확인 아웃바운드",
+            "이전 설치 확인 진행하였으나 서비스 미제공 지역 기타 사유로 거절 확인"
+        ));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     //  공개 API
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * 아웃바운드 상담 원문을 랜덤으로 생성한다.
-     * 반환되는 {@link OutboundTextResult}의 메타데이터는 템플릿에 명시된 값이며,
-     * Factory에서 retention_analysis 컬럼값으로 그대로 사용된다.
+     * outbound_category code_name을 기준으로 상담 원문과 결과서를 생성한다.
+     *
+     * <p>Factory는 먼저 code_name을 분포에 따라 선택한 뒤 이 메서드를 호출한다.
+     *
+     * @param categoryType        상담 카테고리 유형 ("CHN" | "FEE" | "TRB")
+     * @param outboundCategoryKey "CONVERTED" 또는 analysis_code outbound_category code_name
+     *                            (COST | NO_NEED | SWITCH | CONSIDER | DISSATISFIED | OTHER)
+     * @param random              난수 생성기
+     * @return 선택된 템플릿 기반 {@link OutboundTextResult}
      */
-    public OutboundTextResult generate(Random random) {
-        OutboundTemplate t = TEMPLATES.get(random.nextInt(TEMPLATES.size()));
+    public OutboundTextResult generate(String categoryType, String outboundCategoryKey, Random random) {
+        Map<String, List<OutboundTemplate>> map = switch (categoryType) {
+            case "FEE" -> FEE_TEMPLATE_MAP;
+            case "TRB" -> TRB_TEMPLATE_MAP;
+            default    -> TEMPLATE_MAP;
+        };
+        List<OutboundTemplate> pool = map.getOrDefault(outboundCategoryKey, TEMPLATES);
+        OutboundTemplate t = pool.get(random.nextInt(pool.size()));
+        return toResult(t);
+    }
+
+    /**
+     * 사용 가능한 outbound_category 키 목록을 반환한다 (CONVERTED 포함).
+     * OutboundConsultationFactory에서 분포 테이블 구성 시 활용한다.
+     */
+    public Map<String, List<OutboundTemplate>> getTemplateMap() {
+        return Collections.unmodifiableMap(TEMPLATE_MAP);
+    }
+
+    private OutboundTextResult toResult(OutboundTemplate t) {
         return new OutboundTextResult(
                 serialize(t.turns()),
                 t.callResult(),
