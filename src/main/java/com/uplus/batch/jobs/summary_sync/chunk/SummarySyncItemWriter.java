@@ -17,10 +17,9 @@ import com.uplus.batch.domain.summary.repository.SummaryEventStatusRepository;
 
 import com.uplus.batch.domain.summary.service.SummaryProcessingLockService;
 
-import com.uplus.batch.jobs.summary_sync.chunk.KeywordProcessor;
+import com.uplus.batch.domain.summary.service.builder.SearchDocBuilder;
 import com.uplus.batch.jobs.summary_sync.chunk.KeywordProcessor.KeywordResult;
 
-import com.uplus.batch.jobs.summary_sync.chunk.SearchDocBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -209,26 +208,20 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
 
     bulk.upsert(query, update);
 
-    String allText =
-        searchDocBuilder.buildAllText(row, retentionRow, productNames, keywordResult);
+    ConsultationSummary summary =
+        buildSummaryObject(row, resultProducts, riskFlags.get(consultId),
+            retentionRow, reviews.get(consultId), keywordResult);
 
     IndexQuery searchDoc =
         searchDocBuilder.buildSearchDoc(
-            consultId,
-            row,
-            retentionRow,
-            riskFlags.get(consultId),
+            summary,
             productCodes,
-            allText
+            productNames,
+            keywordResult
         );
 
     IndexQuery keywordDoc =
-        searchDocBuilder.buildKeywordDoc(consultId, row, messages);
-
-    log.info("ES doc built. consultId={}, searchDoc={}, keywordDoc={}",
-        consultId,
-        searchDoc != null,
-        keywordDoc != null);
+        searchDocBuilder.buildKeywordDoc(summary, messages);
 
     if (searchDoc != null) searchDocs.add(searchDoc);
     if (keywordDoc != null) keywordDocs.add(keywordDoc);
@@ -422,7 +415,7 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
       KeywordResult keywordResult
   ) {
 
-    return new Update()
+    Update update = new Update()
         .set("consultId", row.consultId())
         .set("consultedAt", row.createdAt())
         .set("channel", row.channel())
@@ -477,19 +470,106 @@ public class SummarySyncItemWriter implements ItemWriter<SummaryEventStatusRow> 
                     .build()
         )
 
-        .set("cancellation",
+        .set("consultType", row.consultationType());
+
+    if ("IN".equals(row.consultationType())) {
+      // 인바운드 전용 필드
+      update.set("cancellation",
+          retention == null ? null :
+              ConsultationSummary.Cancellation.builder()
+                  .intent(retention.hasIntent())
+                  .defenseAttempted(retention.defenseAttempted())
+                  .defenseSuccess(retention.defenseSuccess())
+                  .defenseActions(retention.defenseActions())
+                  .complaintReasons(retention.complaintReason())
+                  .complaintCategory(retention.complaintCategory())
+                  .defenseCategory(retention.defenseCategory())
+                  .build()
+      );
+    } else {
+      // 아웃바운드 전용 필드
+      if (retention != null && retention.outboundCallResult() != null) {
+        Map<String, Object> outboundMap = new java.util.HashMap<>();
+        outboundMap.put("callResult", retention.outboundCallResult());
+        outboundMap.put("rejectReason", retention.outboundCategory() != null
+            ? List.of(retention.outboundCategory()) : List.of()); // TODO: string인지 list string인지 확인 필요
+        outboundMap.put("outboundReport", retention.outboundReport());
+        update.set("outbound", outboundMap);
+      } else {
+        update.set("outbound", null);
+      }
+    }
+    update.set("resultProducts", resultProducts);
+    update.setOnInsert("createdAt", LocalDateTime.now());
+
+    return update;
+  }
+
+  private ConsultationSummary buildSummaryObject(
+      ConsultationResultSyncRow row,
+      List<ResultProducts> resultProducts,
+      List<ConsultationSummary.RiskFlag> riskFlags,
+      RetentionAnalysisRow retention,
+      CustomerReviewRow review,
+      KeywordResult keywordResult
+  ) {
+
+    return ConsultationSummary.builder()
+        .consultId(row.consultId())
+        .consultedAt(row.createdAt())
+        .channel(row.channel())
+        .durationSec(row.durationSec())
+
+        .iam(
+            ConsultationSummary.Iam.builder()
+                .issue(row.iamIssue())
+                .action(row.iamAction())
+                .memo(row.iamMemo())
+                .matchKeyword(keywordResult.matchKeywords())
+                .matchRates(keywordResult.matchRate())
+                .build()
+        )
+
+        .agent(
+            ConsultationSummary.Agent.builder()
+                .id(row.employeeId())
+                .name(row.employeeName())
+                .build()
+        )
+
+        .customer(
+            ConsultationSummary.Customer.builder()
+                .id(row.customerId())
+                .type(row.customerType())
+                .phone(row.customerPhone())
+                .name(row.customerName())
+                .ageGroup(row.ageGroup())
+                .grade(row.customerGrade())
+                .gender(row.customerGender())
+                .satisfiedScore(calculateScore(review))
+                .build()
+        )
+
+        .category(
+            ConsultationSummary.Category.builder()
+                .code(row.categoryCode())
+                .large(row.categoryLarge())
+                .medium(row.categoryMedium())
+                .small(row.categorySmall())
+                .build()
+        )
+
+        .riskFlags(riskFlags)
+        .resultProducts(resultProducts)
+
+        .summary(
             retention == null ? null :
-                ConsultationSummary.Cancellation.builder()
-                    .intent(retention.hasIntent())
-                    .defenseAttempted(retention.defenseAttempted())
-                    .defenseSuccess(retention.defenseSuccess())
-                    .defenseActions(retention.defenseActions())
-                    .complaintReasons(retention.complaintReason())
+                ConsultationSummary.Summary.builder()
+                    .content(retention.rawSummary())
+                    .keywords(keywordResult.summaryKeywords())
                     .build()
         )
 
-        .set("resultProducts", resultProducts)
-
-        .setOnInsert("createdAt", LocalDateTime.now());
+        .build();
   }
 }
