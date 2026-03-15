@@ -209,11 +209,12 @@ public class SyntheticConsultationFactory {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
 
-        List<Long>    consultIds    = new ArrayList<>(batchSize);
-        List<String>  categoryCodes = new ArrayList<>(batchSize);
-        List<String>  channels      = new ArrayList<>(batchSize);
-        List<Integer> empIds        = new ArrayList<>(batchSize);
-        List<Long>    customerIds   = new ArrayList<>(batchSize);
+        List<Long>    consultIds       = new ArrayList<>(batchSize);
+        List<String>  categoryCodes    = new ArrayList<>(batchSize);
+        List<String>  channels         = new ArrayList<>(batchSize);
+        List<Integer> empIds           = new ArrayList<>(batchSize);
+        List<Long>    customerIds      = new ArrayList<>(batchSize);
+        List<SyntheticPersonMatcher.CustomerInfo> consultCustomers = new ArrayList<>(batchSize);
 
         for (int i = 0; i < batchSize; i++) {
             var agent    = agents.get(random.nextInt(agents.size()));
@@ -261,15 +262,22 @@ public class SyntheticConsultationFactory {
             channels.add(channel);
             empIds.add(empId);
             customerIds.add(customerId);
+            consultCustomers.add(customer);
         }
 
         // ── consultation_raw_texts Bulk INSERT ──
         List<Object[]> rawArgs = new ArrayList<>(batchSize);
         for (int i = 0; i < batchSize; i++) {
+            SyntheticPersonMatcher.CustomerInfo ci = consultCustomers.get(i);
+            // TRB 카테고리는 홈/인터넷 품질 문제 → 홈 상품명 우선, 나머지는 모바일 상품명 우선
+            String planName = categoryCodes.get(i).startsWith("M_TRB")
+                    ? (ci.homePlanName() != null ? ci.homePlanName() : ci.mobilePlanName())
+                    : (ci.mobilePlanName() != null ? ci.mobilePlanName() : ci.homePlanName());
             rawArgs.add(new Object[]{
                     consultIds.get(i),
                     rawTextGenerator.generate(categoryCodes.get(i), channels.get(i),
-                            new java.util.Random(ThreadLocalRandom.current().nextLong()))
+                            new java.util.Random(ThreadLocalRandom.current().nextLong()),
+                            ci.name(), planName)
             });
         }
         jdbcTemplate.batchUpdate(
@@ -280,7 +288,7 @@ public class SyntheticConsultationFactory {
         // ── 연관 테이블 Bulk INSERT (같은 트랜잭션) ───────────────────────
         insertClientReviews(consultIds, random);
         insertCustomerRiskLogs(consultIds, empIds, customerIds, categoryCodes, random);
-        insertProductLogs(consultIds, customerIds, categoryCodes, random);
+        insertProductLogs(consultIds, customerIds, categoryCodes, consultCustomers, random);
 
         log.info("[SyntheticFactory] Step1 완료 — consultation_results: {}건, raw_texts: {}건 | " +
                         "consultId 범위: {} ~ {}",
@@ -392,9 +400,12 @@ public class SyntheticConsultationFactory {
      * consult_product_logs — 상담 중 처리된 상품 변경 이력.
      * 60% 확률로 1건, 20% 확률로 2건, 20% 0건.
      * contract_type에 따라 new/canceled 컬럼을 구분하여 삽입.
+     * 고객의 실제 구독 코드(mobileCode/homeCode)를 우선 사용해 원문 내용과 정합성을 맞춘다.
      */
     private void insertProductLogs(List<Long> consultIds, List<Long> customerIds,
-                                   List<String> categoryCodes, ThreadLocalRandom random) {
+                                   List<String> categoryCodes,
+                                   List<SyntheticPersonMatcher.CustomerInfo> consultCustomers,
+                                   ThreadLocalRandom random) {
         boolean hasCodes = cacheDummy.getHomeProductCodes() != null && !cacheDummy.getHomeProductCodes().isEmpty()
                 && cacheDummy.getMobileProductCodes() != null && !cacheDummy.getMobileProductCodes().isEmpty()
                 && cacheDummy.getAdditionalProductCodes() != null && !cacheDummy.getAdditionalProductCodes().isEmpty();
@@ -411,6 +422,8 @@ public class SyntheticConsultationFactory {
             else if (roll < 80) logCount = 1; // 60% 1건
             else logCount = 2;                // 20% 2건
 
+            SyntheticPersonMatcher.CustomerInfo ci = consultCustomers.get(i);
+
             for (int j = 0; j < logCount; j++) {
                 // CHN은 RENEW/CANCEL 위주, 나머지는 랜덤
                 String contractType;
@@ -420,8 +433,14 @@ public class SyntheticConsultationFactory {
                     contractType = contractTypes[random.nextInt(contractTypes.length)];
                 }
                 String productType = productTypes[random.nextInt(productTypes.length)];
-                String code1 = pickProductCode(productType, random);
-                String code2 = "CHANGE".equals(contractType) ? pickDifferentCode(productType, code1, random) : null;
+
+                // 고객의 실제 구독 코드 우선 사용 (없으면 CacheDummy 풀에서 랜덤 선택)
+                String customerCode = "mobile".equals(productType) ? ci.mobileCode()
+                        : "home".equals(productType) ? ci.homeCode() : null;
+                String code1 = customerCode != null ? customerCode : pickProductCode(productType, random);
+                // CHANGE의 신규 상품은 기존과 다른 코드로 선택
+                String code2 = "CHANGE".equals(contractType)
+                        ? pickDifferentCode(productType, code1, random) : null;
 
                 args.add(buildProductLogArgs(
                         consultIds.get(i), customerIds.get(i),
