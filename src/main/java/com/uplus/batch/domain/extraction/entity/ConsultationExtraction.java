@@ -1,8 +1,6 @@
 package com.uplus.batch.domain.extraction.entity;
 
 import com.uplus.batch.domain.extraction.dto.AiExtractionResponse;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -12,7 +10,6 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Entity
 @Table(name = "retention_analysis")
@@ -21,24 +18,40 @@ import java.util.List;
 public class ConsultationExtraction {
 
     @Id
-    @Column(name = "consult_id") // PK이자 FK (기존 상담 식별자)
+    @Column(name = "consult_id")
     private Long consultId;
 
-    @Column(nullable = false)
+    // --- [1. 인바운드/해지 관련 필드] ---
+    // 분석 모드에 따라 null일 수 있으므로 primitive(boolean) 대신 wrapper(Boolean) 사용
     private Boolean hasIntent;
 
     @Column(columnDefinition = "TEXT")
     private String complaintReason;
 
-    @Column(nullable = false)
+    @Column(length = 20)
+    private String complaintCategory; // varchar(20)
+
     private Boolean defenseAttempted;
 
-    @Column(nullable = false)
     private Boolean defenseSuccess;
+
+    @Column(length = 20)
+    private String defenseCategory; // varchar(20)
 
     @Column(columnDefinition = "json")
     private String defenseActions;
 
+    // --- [2. 아웃바운드 전용 필드] ---
+    @Column(length = 20)
+    private String outboundCallResult; // enum('CONVERTED','REJECTED') 대용 varchar(20)
+
+    @Column(columnDefinition = "TEXT")
+    private String outboundReport; // text
+
+    @Column(length = 20)
+    private String outboundCategory; // varchar(20)
+
+    // --- [3. 공통 필드] ---
     @Column(columnDefinition = "TEXT") 
     private String rawSummary;
 
@@ -54,11 +67,22 @@ public class ConsultationExtraction {
     @Builder
     public ConsultationExtraction(Long consultId, AiExtractionResponse res, String actionsJson) {
         this.consultId = consultId;
+        
+        // 공통
+        this.rawSummary = res.raw_summary();
+
+        // 인바운드/해지 (CHN 모드)
         this.hasIntent = res.has_intent();
         this.complaintReason = res.complaint_reason();
+        this.complaintCategory = res.complaint_category();
         this.defenseAttempted = res.defense_attempted();
         this.defenseSuccess = res.defense_success();
-        this.rawSummary = res.raw_summary(); 
+        this.defenseCategory = res.defense_category();
         this.defenseActions = actionsJson;
+
+        // 아웃바운드 (OTB 모드)
+        this.outboundCallResult = res.outbound_call_result();
+        this.outboundReport = res.outbound_report();
+        this.outboundCategory = res.outbound_category();
     }
 }

@@ -1,117 +1,97 @@
 package com.uplus.batch.domain.extraction.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.*;
 
-import java.util.List;
-import java.util.Optional;
-
+import java.util.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.uplus.batch.domain.extraction.dto.AiExtractionResponse;
-import com.uplus.batch.domain.extraction.entity.ConsultationRawText;
-import com.uplus.batch.domain.extraction.entity.EventStatus;
+import com.uplus.batch.domain.extraction.entity.ExcellentEventStatus;
 import com.uplus.batch.domain.extraction.entity.ResultEventStatus;
-import com.uplus.batch.domain.extraction.repository.ConsultationExtractionRepository;
-import com.uplus.batch.domain.extraction.repository.ConsultationRawTextRepository;
+import com.uplus.batch.domain.extraction.repository.ExcellentEventStatusRepository;
 import com.uplus.batch.domain.extraction.repository.ResultEventStatusRepository;
-import com.uplus.batch.domain.extraction.scheduler.ExtractionScheduler;
+import com.uplus.batch.domain.extraction.scheduler.IntegratedAnalysisScheduler;
 
 @ExtendWith(MockitoExtension.class)
 class ExtractionBusinessTest {
 
-    @Mock private ResultEventStatusRepository eventRepository;
-    @Mock private ConsultationRawTextRepository rawTextRepository;
-    @Mock private ConsultationExtractionRepository extractionRepository;
-    @Mock private ConsultationExtractionManager extractionManager;
+    // 🚀 스케줄러가 사용하는 필드 3개를 모두 Mock으로 선언해야 합니다.
+    @Mock private ResultEventStatusRepository resultEventRepository;
+    @Mock private ExcellentEventStatusRepository excellentEventRepository;
+    @Mock private ConsultationAnalysisManager analysisManager;
     
-    @Spy private ObjectMapper objectMapper = new ObjectMapper();
-
     @InjectMocks
-    private ExtractionScheduler extractionScheduler;
+    private IntegratedAnalysisScheduler scheduler;
 
     private ResultEventStatus testTask;
+    private ExcellentEventStatus testScoringTask;
 
     @BeforeEach
     void setUp() {
         testTask = ResultEventStatus.builder()
-                .consultId(100L)
-                .categoryCode("CHN_RETENTION")
+                .consultId(300L)
+                .categoryCode("M_OTB_001")
                 .build();
+
+        testScoringTask = new ExcellentEventStatus(300L);
     }
 
     @Test
-    @DisplayName("성공 케이스: AI 추출 후 결과가 정상적으로 DB에 저장되어야 한다")
-    void processIndividualTask_Success() throws Exception {
-        // Given
-        ConsultationRawText mockRaw = mock(ConsultationRawText.class);
-        given(mockRaw.getRawTextJson()).willReturn("{\"text\": \"해지하고 싶어요\"}");
-        given(rawTextRepository.findByConsultId(100L)).willReturn(Optional.of(mockRaw));
-
-        AiExtractionResponse mockAiRes = new AiExtractionResponse(
-                true, "비싼 요금제", true, false, List.of("할인 제안"), "고객이 요금 불만으로 해지 요청"
-        );
-        given(extractionManager.runExtraction(anyString(), anyString())).willReturn(mockAiRes);
-
-        // When
-        extractionScheduler.processIndividualTask(testTask);
-
-        // Then
-        assertThat(testTask.getStatus()).isEqualTo(EventStatus.COMPLETED);
-        verify(extractionRepository, times(1)).save(any());
-        verify(eventRepository, atLeastOnce()).saveAndFlush(testTask);
-    }
-
-    @Test
-    @DisplayName("실패 케이스: 원본 데이터가 없는 경우 FAILED 상태로 업데이트 되어야 한다")
-    void processIndividualTask_RawDataNotFound() {
-        // Given
-        given(rawTextRepository.findByConsultId(100L)).willReturn(Optional.empty());
-
-        // When
-        extractionScheduler.processIndividualTask(testTask);
-
-        // Then
-        assertThat(testTask.getStatus()).isEqualTo(EventStatus.FAILED);
-        assertThat(testTask.getFailReason()).contains("원본 대화 데이터를 찾을 수 없습니다");
-        assertThat(testTask.getRetryCount()).isEqualTo(1);
-    }
-
-    @Test
-    @DisplayName("실패 케이스: AI 응답의 raw_summary가 비어있으면 예외가 발생하며 실패 처리된다")
-    void processIndividualTask_EmptyAiResponse() {
-        // 1. Given: 원본 데이터는 존재하지만 (null이 아니어야 함)
-        ConsultationRawText mockRaw = mock(ConsultationRawText.class);
-        given(mockRaw.getRawTextJson()).willReturn("{\"some\":\"json\"}"); // null이 아닌 값 설정
-        given(rawTextRepository.findByConsultId(100L)).willReturn(Optional.of(mockRaw));
-
-        // 2. Given: AI 응답 객체는 오지만 내용이 비어있는 상황 설정
-        AiExtractionResponse emptyRes = new AiExtractionResponse(
-                false, null, false, false, List.of(), "" // raw_summary가 빈 값
-        );
+    @DisplayName("성공: 대기 중인 태스크 쌍을 찾아 매니저에게 번들 분석을 요청한다")
+    void executeIntegratedAnalysis_Success() {
+        // Given: 50개를 가져왔을 때 1건의 대기 데이터가 있다고 가정
+        given(resultEventRepository.findReadyToProcessPairs(any(Pageable.class)))
+                .willReturn(List.of(testTask));
         
-        // any()를 사용하여 null 여부와 관계없이 매칭되도록 설정 (Stubbing Mismatch 방지)
-        given(extractionManager.runExtraction(any(), any())).willReturn(emptyRes);
+        // 짝이 맞는 채점 태스크도 존재한다고 가정
+        given(excellentEventRepository.findByConsultId(300L))
+                .willReturn(Optional.of(testScoringTask));
 
         // When
-        extractionScheduler.processIndividualTask(testTask);
+        scheduler.executeIntegratedAnalysis();
 
-        // Then
-        assertThat(testTask.getStatus()).isEqualTo(EventStatus.FAILED);
-        assertThat(testTask.getFailReason()).contains("AI가 내용을 생성하지 못했습니다");
+        // Then: 매니저의 번들 처리 메서드가 최소 1번 호출되었는지 검증
+        verify(analysisManager, times(1)).processIntegratedBundledTasks(anyList());
+    }
+
+    @Test
+    @DisplayName("실패: 처리할 대기 데이터가 없으면 즉시 종료한다")
+    void executeIntegratedAnalysis_NoData_Return() {
+        // Given: 대기 데이터가 빈 리스트일 때
+        given(resultEventRepository.findReadyToProcessPairs(any(Pageable.class)))
+                .willReturn(Collections.emptyList());
+
+        // When
+        scheduler.executeIntegratedAnalysis();
+
+        // Then: 매니저가 호출되지 않아야 함
+        verify(analysisManager, never()).processIntegratedBundledTasks(anyList());
+    }
+
+    @Test
+    @DisplayName("실패: 요약 태스크는 있으나 짝궁 채점 태스크가 없으면 제외하고 진행한다")
+    void executeIntegratedAnalysis_NoPair_Skip() {
+        // Given: 요약 태스크는 있지만
+        given(resultEventRepository.findReadyToProcessPairs(any(Pageable.class)))
+                .willReturn(List.of(testTask));
+        
+        // 짝꿍 채점 태스크가 존재하지 않을 때
+        given(excellentEventRepository.findByConsultId(300L))
+                .willReturn(Optional.empty());
+
+        // When
+        scheduler.executeIntegratedAnalysis();
+
+        // Then: 유효한 짝(TaskPair)이 없으므로 매니저는 호출되지 않음
+        verify(analysisManager, never()).processIntegratedBundledTasks(anyList());
     }
 }

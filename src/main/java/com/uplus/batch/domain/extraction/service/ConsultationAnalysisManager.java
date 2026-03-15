@@ -1,26 +1,19 @@
 package com.uplus.batch.domain.extraction.service;
 
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation; 
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.uplus.batch.domain.extraction.dto.AiExtractionResponse;
 import com.uplus.batch.domain.extraction.dto.QualityScoringResponse;
-import com.uplus.batch.domain.extraction.entity.ConsultationEvaluation;
-import com.uplus.batch.domain.extraction.entity.ConsultationExtraction;
-import com.uplus.batch.domain.extraction.entity.ConsultationRawText;
-import com.uplus.batch.domain.extraction.entity.ExcellentEventStatus;
-import com.uplus.batch.domain.extraction.entity.Manual; 
-import com.uplus.batch.domain.extraction.entity.ResultEventStatus;
-import com.uplus.batch.domain.extraction.repository.ConsultationEvaluationRepository;
-import com.uplus.batch.domain.extraction.repository.ConsultationExtractionRepository;
-import com.uplus.batch.domain.extraction.repository.ConsultationRawTextRepository;
-import com.uplus.batch.domain.extraction.repository.ExcellentEventStatusRepository; 
-import com.uplus.batch.domain.extraction.repository.ResultEventStatusRepository;    
-import com.uplus.batch.domain.extraction.repository.ManualRepository;
+import com.uplus.batch.domain.extraction.entity.*;
+import com.uplus.batch.domain.extraction.repository.*;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -28,71 +21,120 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @RequiredArgsConstructor
 public class ConsultationAnalysisManager {
-    private final GeminiExtractor geminiExtractor;      
-    private final GeminiQualityScorer geminiQualityScorer; 
+
+    private final GeminiExtractor geminiExtractor;
+    private final GeminiQualityScorer geminiQualityScorer;
     private final ConsultationRawTextRepository rawTextRepository;
     private final ConsultationExtractionRepository extractionRepository;
     private final ConsultationEvaluationRepository evaluationRepository;
-    private final ManualRepository manualRepository; 
-    private final ObjectMapper objectMapper;
     private final ResultEventStatusRepository resultEventRepository;
     private final ExcellentEventStatusRepository excellentEventRepository;
+    private final ManualRepository manualRepository;
+    private final AnalysisCodeRepository analysisCodeRepository;
+    private final ObjectMapper objectMapper;
 
     /**
-     * 요약 추출과 우수 채점을 한 번의 원문 조회로 병렬 처리하는 통합 프로세서
+     * [통합 번들 프로세서]
+     * 50쌍의 태스크를 카테고리별로 묶어 '번들 요약'과 '개별 채점'을 수행합니다.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void processIntegratedTask(ResultEventStatus summaryTask, ExcellentEventStatus scoringTask) {
-        try {
-            // 1. [선점] 두 이벤트 상태 모두 PROCESSING으로 변경 및 DB 즉시 반영
-            summaryTask.start();
-            scoringTask.start();
-            resultEventRepository.save(summaryTask);     
-            excellentEventRepository.save(scoringTask);   
+    public void processIntegratedBundledTasks(List<TaskPair> taskPairs) {
+        if (taskPairs == null || taskPairs.isEmpty()) return;
 
-            // 2. [조회] 원문 로드
-            ConsultationRawText rawData = rawTextRepository.findByConsultId(summaryTask.getConsultId())
-                    .orElseThrow(() -> new RuntimeException("원본 데이터를 찾을 수 없습니다."));
+        // 1. 상태 선점 (모든 태스크 PROCESSING 처리)
+        taskPairs.forEach(pair -> {
+            pair.summaryTask().start();
+            pair.scoringTask().start();
+        });
+        resultEventRepository.saveAll(taskPairs.stream().map(TaskPair::summaryTask).collect(Collectors.toList()));
+        excellentEventRepository.saveAll(taskPairs.stream().map(TaskPair::scoringTask).collect(Collectors.toList()));
 
-            log.info("[Batch] AI 통합 분석 시작 - ConsultID: {}", summaryTask.getConsultId());
+        // 2. 성격별 그룹화 (프롬프트 오염 방지)
+        Map<String, List<TaskPair>> groups = taskPairs.stream()
+                .collect(Collectors.groupingBy(pair -> getGroupType(pair.summaryTask().getCategoryCode())));
 
-            // 3. [비동기 병렬 호출]
-            CompletableFuture<AiExtractionResponse> extractionFuture = CompletableFuture.supplyAsync(() -> 
-                geminiExtractor.extract(rawData.getRawTextJson(), summaryTask.getCategoryCode().contains("CHN")));
+        Map<String, String> validCodes = getAnalysisCodesFromDb();
 
-            CompletableFuture<QualityScoringResponse> scoringFuture = CompletableFuture.supplyAsync(() -> {
-                String manualContent = manualRepository.findByCategoryCodeAndIsActiveTrue(summaryTask.getCategoryCode())
-                        .map(Manual::getContent)
-                        .orElseThrow(() -> new RuntimeException("활성화된 매뉴얼을 찾을 수 없습니다: " + summaryTask.getCategoryCode()));
-                
-                return geminiQualityScorer.evaluate(rawData.getRawTextJson(), manualContent);
-            });
+        // 3. 그룹별 실행
+        groups.forEach((groupType, pairs) -> {
+            try {
+                log.info("[Batch] {} 그룹 통합 분석 시작 ({}건)", groupType, pairs.size());
 
-            // 4. 대기
-            CompletableFuture.allOf(extractionFuture, scoringFuture).join();
+                // 원문 데이터 로드
+                List<ConsultationRawText> rawDataList = pairs.stream()
+                        .map(p -> rawTextRepository.findByConsultId(p.summaryTask().getConsultId())
+                                .orElseThrow(() -> new RuntimeException("원문 없음: " + p.summaryTask().getConsultId())))
+                        .collect(Collectors.toList());
 
-            // 5. [저장 및 완료] 요약 결과 저장 및 상태 COMPLETED 변경
-            saveExtraction(summaryTask.getConsultId(), extractionFuture.get());
-            summaryTask.complete();
-            resultEventRepository.save(summaryTask);      
+                // 공통 매뉴얼 로드 (그룹 내 첫 번째 카테고리 기준)
+                String manualContent = manualRepository.findByCategoryCodeAndIsActiveTrue(pairs.get(0).summaryTask().getCategoryCode())
+                        .map(Manual::getContent).orElse("기본 매뉴얼");
 
-            // 채점 결과 저장 및 상태 COMPLETED 변경
-            saveEvaluation(scoringTask.getConsultId(), scoringFuture.get());
-            scoringTask.complete();
-            excellentEventRepository.save(scoringTask);    
+                // 🚀 [A] 요약: 50개를 묶어서 API 1번 호출 (번들 비동기)
+                CompletableFuture<List<AiExtractionResponse>> extractionFuture = CompletableFuture.supplyAsync(() ->
+                        geminiExtractor.extractBatch(
+                                rawDataList.stream().map(ConsultationRawText::getRawTextJson).collect(Collectors.toList()),
+                                groupType,
+                                validCodes
+                        )
+                );
 
-            log.info("[Success] 상담 ID {} 통합 분석 완료", summaryTask.getConsultId());
+                // 🚀 [B] 채점: 각 건별 병렬 호출 (개별 비동기)
+                List<CompletableFuture<QualityScoringResponse>> scoringFutures = rawDataList.stream()
+                        .map(raw -> CompletableFuture.supplyAsync(() ->
+                                geminiQualityScorer.evaluate(raw.getRawTextJson(), manualContent)
+                        )).collect(Collectors.toList());
 
-        } catch (Exception e) {
-            log.error("[Critical Error] 통합 분석 실패 - ID {}: {}", summaryTask.getConsultId(), e.getMessage());
-            String errorMsg = truncate(e.getMessage());
-            
-            // 6. [실패] 에러 발생 시 FAILED 마킹 및 DB 반영
-            summaryTask.fail(errorMsg);
-            scoringTask.fail(errorMsg);
-            resultEventRepository.save(summaryTask);     
-            excellentEventRepository.save(scoringTask);    
-        }
+                // 모든 작업 완료 대기
+                CompletableFuture.allOf(extractionFuture).join();
+                CompletableFuture.allOf(scoringFutures.toArray(new CompletableFuture[0])).join();
+
+                // 4. 리스트 결과 해체 및 개별 저장 (중요!)
+                List<AiExtractionResponse> extractionResults = extractionFuture.get();
+
+                for (int i = 0; i < pairs.size(); i++) {
+                    TaskPair pair = pairs.get(i);
+                    
+                    // AI가 반환한 배열에서 내 순서(i)에 맞는 결과 하나를 꺼냄
+                    AiExtractionResponse extRes = extractionResults.get(i);
+                    QualityScoringResponse scoreRes = scoringFutures.get(i).get();
+
+                    // 개별 Row로 저장
+                    saveExtraction(pair.summaryTask().getConsultId(), extRes);
+                    saveEvaluation(pair.scoringTask().getConsultId(), scoreRes);
+
+                    pair.summaryTask().complete();
+                    pair.scoringTask().complete();
+                }
+
+            } catch (Exception e) {
+                log.error("[Batch Critical Error] {} 그룹 실패: {}", groupType, e.getMessage());
+                pairs.forEach(p -> {
+                    p.summaryTask().fail(truncate(e.getMessage()));
+                    p.scoringTask().fail(truncate(e.getMessage()));
+                });
+            }
+        });
+
+        // 5. 최종 상태 업데이트
+        resultEventRepository.saveAll(taskPairs.stream().map(TaskPair::summaryTask).collect(Collectors.toList()));
+        excellentEventRepository.saveAll(taskPairs.stream().map(TaskPair::scoringTask).toList());
+    }
+
+    private String getGroupType(String code) {
+        if (code.contains("OTB")) return "OUTBOUND";
+        if (code.contains("CHN")) return "INBOUND_CHN";
+        return "INBOUND_NORMAL";
+    }
+
+    private Map<String, String> getAnalysisCodesFromDb() {
+        List<String> targetClassifications = List.of("complaint_category", "defense_category", "outbound_category");
+        List<AnalysisCode> codes = analysisCodeRepository.findAllByClassificationIn(targetClassifications);
+        return codes.stream()
+                .collect(Collectors.groupingBy(
+                        AnalysisCode::getClassification,
+                        Collectors.mapping(AnalysisCode::getCodeName, Collectors.joining(", "))
+                ));
     }
 
     private void saveExtraction(Long id, AiExtractionResponse res) throws Exception {
@@ -105,19 +147,17 @@ public class ConsultationAnalysisManager {
     }
 
     private void saveEvaluation(Long id, QualityScoringResponse res) {
-        ConsultationEvaluation entity = ConsultationEvaluation.builder()
+        evaluationRepository.save(ConsultationEvaluation.builder()
                 .consultId(id)
                 .score(res.score())
                 .evaluationReason(res.evaluation_reason())
                 .isCandidate(res.is_candidate())
-                .build();
-        
-        evaluationRepository.save(entity);
-        log.info("[Evaluation Saved] 상담 ID: {}, 후보여부: {}, 상태: {}", 
-                 id, res.is_candidate(), entity.getSelectionStatus());
+                .build());
     }
 
-    private String truncate(String msg) { 
-        return (msg != null && msg.length() > 200) ? msg.substring(0, 200) + "..." : msg; 
+    private String truncate(String msg) {
+        return (msg != null && msg.length() > 200) ? msg.substring(0, 200) + "..." : msg;
     }
+
+    public record TaskPair(ResultEventStatus summaryTask, ExcellentEventStatus scoringTask) {}
 }
