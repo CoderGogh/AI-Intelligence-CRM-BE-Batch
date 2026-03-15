@@ -51,7 +51,9 @@ public class SyntheticPersonMatcher {
             LocalDate birthDate,
             String gender,         // 'M' | 'F' | null
             String mobilePlanName, // 현재 활성 모바일 상품명 (nullable)
-            String homePlanName    // 현재 활성 홈/인터넷 상품명 (nullable)
+            String homePlanName,   // 현재 활성 홈/인터넷 상품명 (nullable)
+            String mobileCode,     // 현재 활성 모바일 상품 코드 (nullable)
+            String homeCode        // 현재 활성 홈/인터넷 상품 코드 (nullable)
     ) {}
 
     // ─────────────────────────────────────────────────────────
@@ -87,12 +89,22 @@ public class SyntheticPersonMatcher {
                 SELECT
                     c.customer_id, c.name, c.customer_type, c.phone,
                     c.grade_code, c.birth_date, c.gender,
+                    (SELECT csm.mobile_code
+                     FROM customer_subscription_mobile csm
+                     WHERE csm.customer_id = c.customer_id
+                       AND csm.extinguish_at IS NULL
+                     LIMIT 1) AS mobile_code,
                     (SELECT pm.plan_name
                      FROM customer_subscription_mobile csm
                      JOIN product_mobile pm ON csm.mobile_code = pm.mobile_code
                      WHERE csm.customer_id = c.customer_id
                        AND csm.extinguish_at IS NULL
                      LIMIT 1) AS mobile_plan_name,
+                    (SELECT csh.home_code
+                     FROM customer_subscription_home csh
+                     WHERE csh.customer_id = c.customer_id
+                       AND csh.extinguish_at IS NULL
+                     LIMIT 1) AS home_code,
                     (SELECT ph.product_name
                      FROM customer_subscription_home csh
                      JOIN product_home ph ON csh.home_code = ph.home_code
@@ -111,7 +123,9 @@ public class SyntheticPersonMatcher {
                                 ? rs.getDate("birth_date").toLocalDate() : null,
                         rs.getString("gender"),
                         rs.getString("mobile_plan_name"),
-                        rs.getString("home_plan_name")
+                        rs.getString("home_plan_name"),
+                        rs.getString("mobile_code"),
+                        rs.getString("home_code")
                 )
         );
     }
