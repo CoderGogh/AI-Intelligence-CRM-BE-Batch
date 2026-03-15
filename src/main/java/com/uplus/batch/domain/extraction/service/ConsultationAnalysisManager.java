@@ -33,93 +33,89 @@ public class ConsultationAnalysisManager {
     private final AnalysisCodeRepository analysisCodeRepository;
     private final ObjectMapper objectMapper;
 
-    /**
-     * [통합 번들 프로세서]
-     * 50쌍의 태스크를 카테고리별로 묶어 '번들 요약'과 '개별 채점'을 수행합니다.
-     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void processIntegratedBundledTasks(List<TaskPair> taskPairs) {
         if (taskPairs == null || taskPairs.isEmpty()) return;
 
-        // 1. 상태 선점 (모든 태스크 PROCESSING 처리)
-        taskPairs.forEach(pair -> {
-            pair.summaryTask().start();
-            pair.scoringTask().start();
-        });
-        resultEventRepository.saveAll(taskPairs.stream().map(TaskPair::summaryTask).collect(Collectors.toList()));
-        excellentEventRepository.saveAll(taskPairs.stream().map(TaskPair::scoringTask).collect(Collectors.toList()));
+        /* [STEP 1] 모든 태스크 상태 선점 (DB 락 방지 및 상태 처리) */
+        taskPairs.forEach(pair -> { pair.summaryTask().start(); pair.scoringTask().start(); });
+        resultEventRepository.saveAll(taskPairs.stream().map(TaskPair::summaryTask).toList());
+        excellentEventRepository.saveAll(taskPairs.stream().map(TaskPair::scoringTask).toList());
 
-        // 2. 성격별 그룹화 (프롬프트 오염 방지)
+        /* [STEP 2] 성격별 그룹화 및 프롬프트 코드 구성 */
         Map<String, List<TaskPair>> groups = taskPairs.stream()
                 .collect(Collectors.groupingBy(pair -> getGroupType(pair.summaryTask().getCategoryCode())));
-
         Map<String, String> validCodes = getAnalysisCodesFromDb();
 
-        // 3. 그룹별 실행
         groups.forEach((groupType, pairs) -> {
             try {
-                log.info("[Batch] {} 그룹 통합 분석 시작 ({}건)", groupType, pairs.size());
+                log.info("[Batch] {} 그룹 분석 시작 ({}건)", groupType, pairs.size());
 
-                // 원문 데이터 로드
                 List<ConsultationRawText> rawDataList = pairs.stream()
                         .map(p -> rawTextRepository.findByConsultId(p.summaryTask().getConsultId())
-                                .orElseThrow(() -> new RuntimeException("원문 없음: " + p.summaryTask().getConsultId())))
-                        .collect(Collectors.toList());
+                                .orElseThrow(() -> new RuntimeException("원문 없음")))
+                        .toList();
 
-                // 공통 매뉴얼 로드 (그룹 내 첫 번째 카테고리 기준)
                 String manualContent = manualRepository.findByCategoryCodeAndIsActiveTrue(pairs.get(0).summaryTask().getCategoryCode())
                         .map(Manual::getContent).orElse("기본 매뉴얼");
 
-                // 🚀 [A] 요약: 50개를 묶어서 API 1번 호출 (번들 비동기)
+                /* [STEP 3] AI 비동기 실행: 요약은 번들(1회), 채점은 병렬(N회) */
                 CompletableFuture<List<AiExtractionResponse>> extractionFuture = CompletableFuture.supplyAsync(() ->
-                        geminiExtractor.extractBatch(
-                                rawDataList.stream().map(ConsultationRawText::getRawTextJson).collect(Collectors.toList()),
-                                groupType,
-                                validCodes
-                        )
+                        geminiExtractor.extractBatch(rawDataList.stream().map(ConsultationRawText::getRawTextJson).toList(), groupType, validCodes)
                 );
 
-                // 🚀 [B] 채점: 각 건별 병렬 호출 (개별 비동기)
                 List<CompletableFuture<QualityScoringResponse>> scoringFutures = rawDataList.stream()
-                        .map(raw -> CompletableFuture.supplyAsync(() ->
-                                geminiQualityScorer.evaluate(raw.getRawTextJson(), manualContent)
-                        )).collect(Collectors.toList());
+                        .map(raw -> CompletableFuture.supplyAsync(() -> geminiQualityScorer.evaluate(raw.getRawTextJson(), manualContent))
+                                .handle((res, ex) -> {
+                                    if (ex != null) { return null; } // 개별 채점 실패 시 null 반환 (격리)
+                                    return res;
+                                })
+                        ).toList();
 
-                // 모든 작업 완료 대기
-                CompletableFuture.allOf(extractionFuture).join();
-                CompletableFuture.allOf(scoringFutures.toArray(new CompletableFuture[0])).join();
-
-                // 4. 리스트 결과 해체 및 개별 저장 
-                List<AiExtractionResponse> extractionResults = extractionFuture.get();
+                /* [STEP 4] 결과 수집: 번들 요약 결과 대기 및 개수 검증 */
+                List<AiExtractionResponse> extractionResults = extractionFuture.join();
                 if (extractionResults.size() != pairs.size()) {
-                    throw new RuntimeException("AI 응답 개수 불일치 (보낸 건: " + pairs.size() + ", 받은 건: " + extractionResults.size() + ")");
+                    throw new RuntimeException("AI 응답 개수 불일치");
                 }
+
+                /* [STEP 5] 개별 저장 루프: 채점 낙오자가 있어도 나머지는 정상 처리 */
                 for (int i = 0; i < pairs.size(); i++) {
                     TaskPair pair = pairs.get(i);
-                    
-                    // AI가 반환한 배열에서 내 순서(i)에 맞는 결과 하나를 꺼냄
-                    AiExtractionResponse extRes = extractionResults.get(i);
-                    QualityScoringResponse scoreRes = scoringFutures.get(i).get();
+                    Long cId = pair.summaryTask().getConsultId();
 
-                    // 개별 Row로 저장
-                    saveExtraction(pair.summaryTask().getConsultId(), extRes);
-                    saveEvaluation(pair.scoringTask().getConsultId(), scoreRes);
+                    try {
+                        QualityScoringResponse scoreRes = scoringFutures.get(i).join();
 
-                    pair.summaryTask().complete();
-                    pair.scoringTask().complete();
+                        if (scoreRes == null) { // AI 채점만 실패한 경우 처리
+                            pair.summaryTask().fail("채점 API 호출 실패");
+                            pair.scoringTask().fail("채점 API 호출 실패");
+                            continue; 
+                        }
+
+                        saveExtraction(cId, extractionResults.get(i));
+                        saveEvaluation(pair.scoringTask().getConsultId(), scoreRes);
+
+                        pair.summaryTask().complete();
+                        pair.scoringTask().complete();
+
+                    } catch (Exception e) {
+                        pair.summaryTask().fail("저장 오류: " + truncate(e.getMessage()));
+                        pair.scoringTask().fail("저장 오류: " + truncate(e.getMessage()));
+                    }
                 }
 
             } catch (Exception e) {
-                log.error("[Batch Critical Error] {} 그룹 실패: {}", groupType, e.getMessage());
+                /* [STEP 6] 그룹 치명적 에러: 번들 요약 실패 시 해당 그룹 전원 실패 처리 */
+                log.error("[Group Error] {} 실패: {}", groupType, e.getMessage());
                 pairs.forEach(p -> {
-                    p.summaryTask().fail(truncate(e.getMessage()));
-                    p.scoringTask().fail(truncate(e.getMessage()));
+                    p.summaryTask().fail("번들링 실패: " + truncate(e.getMessage()));
+                    p.scoringTask().fail("번들링 실패: " + truncate(e.getMessage()));
                 });
             }
         });
 
-        // 5. 최종 상태 업데이트
-        resultEventRepository.saveAll(taskPairs.stream().map(TaskPair::summaryTask).collect(Collectors.toList()));
+        /* [STEP 7] 최종 상태 DB 동기화 */
+        resultEventRepository.saveAll(taskPairs.stream().map(TaskPair::summaryTask).toList());
         excellentEventRepository.saveAll(taskPairs.stream().map(TaskPair::scoringTask).toList());
     }
 
