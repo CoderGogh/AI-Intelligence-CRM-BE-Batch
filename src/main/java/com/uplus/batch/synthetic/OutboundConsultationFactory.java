@@ -2,6 +2,7 @@ package com.uplus.batch.synthetic;
 
 import com.uplus.batch.common.dummy.dto.CacheDummy;
 import com.uplus.batch.domain.summary.entity.SummaryEventStatus;
+import com.uplus.batch.domain.summary.repository.ProductRepository;
 import com.uplus.batch.domain.summary.repository.SummaryEventStatusRepository;
 import com.uplus.batch.synthetic.OutboundRawTextGenerator.OutboundTextResult;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +54,7 @@ public class OutboundConsultationFactory {
     private final JdbcTemplate jdbcTemplate;
     private final SummaryEventStatusRepository summaryEventStatusRepo;
     private final CacheDummy cacheDummy;
+    private final ProductRepository productRepository;
 
     public record BatchResult(List<Long> consultIds, List<String> categoryCodes) {
         public boolean isEmpty() { return consultIds.isEmpty(); }
@@ -97,12 +99,15 @@ public class OutboundConsultationFactory {
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'OUTBOUND', ?)
                 """;
 
-        List<Long>    consultIds    = new ArrayList<>(batchSize);
-        List<String>  categoryCodes = new ArrayList<>(batchSize);
-        List<Integer> empIds        = new ArrayList<>(batchSize);
-        List<Long>    customerIds   = new ArrayList<>(batchSize);
-        List<String>  categoryTypes = new ArrayList<>(batchSize);
-        List<String>  callResults   = new ArrayList<>(batchSize);
+        List<Long>    consultIds          = new ArrayList<>(batchSize);
+        List<String>  categoryCodes       = new ArrayList<>(batchSize);
+        List<Integer> empIds              = new ArrayList<>(batchSize);
+        List<Long>    customerIds         = new ArrayList<>(batchSize);
+        List<String>  categoryTypes       = new ArrayList<>(batchSize);
+        List<String>  callResults         = new ArrayList<>(batchSize);
+        List<Boolean> cancelProcesseds    = new ArrayList<>(batchSize);
+        List<String>  targetMobileCodes   = new ArrayList<>(batchSize);
+        List<String>  customerMobileCodes = new ArrayList<>(batchSize);
 
         List<Object[]> rawArgs = new ArrayList<>(batchSize);
 
@@ -119,10 +124,25 @@ public class OutboundConsultationFactory {
             int durationSec = 120 + random.nextInt(481); // CALL: 120~600s
 
             String outboundCategoryKey = pickOutboundCategoryKey(categoryType, random.nextInt(100));
+
+            // FEE CONVERTED 시 변경 대상 요금제 코드·명칭 사전 선택
+            boolean willConvert = "CONVERTED".equals(outboundCategoryKey);
+            boolean isFeeConverted = willConvert && "FEE".equals(categoryType)
+                    && cacheDummy.getMobileProductCodes() != null
+                    && !cacheDummy.getMobileProductCodes().isEmpty();
+            String targetMobileCode = isFeeConverted
+                    ? pickDifferentCode("mobile",
+                            customer.mobileCode() != null ? customer.mobileCode() : "", random)
+                    : null;
+            String targetMobilePlanName = targetMobileCode != null
+                    ? productRepository.findProductName(targetMobileCode)
+                    : null;
+
             OutboundRawTextGenerator.CustomerContext ctx = new OutboundRawTextGenerator.CustomerContext(
                     customer.name(),
                     customer.mobilePlanName(),
-                    customer.homePlanName()
+                    customer.homePlanName(),
+                    targetMobilePlanName
             );
             OutboundTextResult textResult = outboundRawTextGenerator.generate(
                     categoryType, outboundCategoryKey,
@@ -161,6 +181,9 @@ public class OutboundConsultationFactory {
             customerIds.add(custId);
             categoryTypes.add(categoryType);
             callResults.add(textResult.callResult());
+            cancelProcesseds.add(textResult.cancelProcessed());
+            targetMobileCodes.add(targetMobileCode);
+            customerMobileCodes.add(customer.mobileCode());
             rawArgs.add(new Object[]{consultId, textResult.rawTextJson()});
         }
 
@@ -173,7 +196,8 @@ public class OutboundConsultationFactory {
         // ── 연관 테이블 Bulk INSERT ──────────────────────────────────────────
         insertClientReviews(consultIds, random);
         insertCustomerRiskLogs(consultIds, empIds, customerIds, random);
-        insertProductLogs(consultIds, customerIds, categoryTypes, callResults, random);
+        insertProductLogs(consultIds, customerIds, categoryTypes, callResults,
+                cancelProcesseds, targetMobileCodes, customerMobileCodes, random);
 
         log.info("[OutboundFactory] Step1 완료 — {}건 생성 | consultId 범위: {} ~ {}",
                 batchSize, consultIds.get(0), consultIds.get(consultIds.size() - 1));
@@ -269,36 +293,58 @@ public class OutboundConsultationFactory {
     /**
      * consult_product_logs — 아웃바운드 상담에서 실제 처리된 상품 변경 이력.
      *
-     * <p>아웃바운드 CONVERTED 결과만 로그 대상이며, 카테고리별 contract_type을 결정한다:
      * <ul>
-     *   <li>CONVERTED + CHN → RENEW (재약정 성공)</li>
-     *   <li>CONVERTED + FEE → CHANGE (요금제 변경 성공)</li>
-     *   <li>CONVERTED + TRB → 로그 없음 (기술 점검·보상만 진행, 상품 변경 없음)</li>
-     *   <li>REJECTED          → 로그 없음 (상담 미성공, 상품 변경 없음)</li>
+     *   <li>CONVERTED + CHN → RENEW (재약정 성공): 고객 현재 모바일 코드 사용</li>
+     *   <li>CONVERTED + FEE → CHANGE (요금제 변경): 신규=targetMobileCode, 기존=customerMobileCode</li>
+     *   <li>CONVERTED + TRB → 로그 없음 (기술 점검·보상, 상품 변경 없음)</li>
+     *   <li>REJECTED + cancelProcessed → CANCEL: 고객 현재 모바일 코드 사용</li>
+     *   <li>REJECTED (일반 거절) → 로그 없음</li>
      * </ul>
      */
     private void insertProductLogs(List<Long> consultIds, List<Long> customerIds,
                                    List<String> categoryTypes, List<String> callResults,
-                                   ThreadLocalRandom random) {
+                                   List<Boolean> cancelProcesseds, List<String> targetMobileCodes,
+                                   List<String> customerMobileCodes, ThreadLocalRandom random) {
         boolean hasCodes = cacheDummy.getMobileProductCodes() != null
                 && !cacheDummy.getMobileProductCodes().isEmpty();
         if (!hasCodes) return;
 
         List<Object[]> args = new ArrayList<>();
         for (int i = 0; i < consultIds.size(); i++) {
-            // REJECTED 또는 TRB CONVERTED(기술 점검)는 상품 변경 없음
-            if ("REJECTED".equals(callResults.get(i))) continue;
-            if ("TRB".equals(categoryTypes.get(i))) continue;
+            boolean isConverted     = "CONVERTED".equals(callResults.get(i));
+            boolean cancelProcessed = cancelProcesseds.get(i);
+            String  categoryType    = categoryTypes.get(i);
+            String  custMobileCode  = customerMobileCodes.get(i);
 
-            // CHN CONVERTED → RENEW(재약정), FEE CONVERTED → CHANGE(요금제 변경)
-            String contractType = "CHN".equals(categoryTypes.get(i)) ? "RENEW" : "CHANGE";
-            String code1 = pickProductCode("mobile", random);
-            String code2 = "CHANGE".equals(contractType)
-                    ? pickDifferentCode("mobile", code1, random) : null;
+            if (!isConverted) {
+                // REJECTED: 상담사가 실제 해지를 처리한 경우만 CANCEL 로그
+                if (cancelProcessed && custMobileCode != null) {
+                    args.add(buildProductLogArgs(
+                            consultIds.get(i), customerIds.get(i),
+                            "CANCEL", "mobile", custMobileCode, null));
+                }
+                continue;
+            }
 
-            args.add(buildProductLogArgs(
-                    consultIds.get(i), customerIds.get(i),
-                    contractType, "mobile", code1, code2));
+            // TRB CONVERTED: 기술 점검만, 상품 변경 없음
+            if ("TRB".equals(categoryType)) continue;
+
+            if ("CHN".equals(categoryType)) {
+                // 재약정: 고객 기존 상품 코드 유지
+                String code = custMobileCode != null ? custMobileCode : pickProductCode("mobile", random);
+                args.add(buildProductLogArgs(
+                        consultIds.get(i), customerIds.get(i),
+                        "RENEW", "mobile", code, null));
+            } else if ("FEE".equals(categoryType)) {
+                // 요금제 변경: 신규 상품(targetMobileCode) → 기존 상품(customerMobileCode)
+                String targetCode = targetMobileCodes.get(i);
+                String newCode  = targetCode != null ? targetCode : pickProductCode("mobile", random);
+                String oldCode  = custMobileCode != null ? custMobileCode
+                        : pickDifferentCode("mobile", newCode, random);
+                args.add(buildProductLogArgs(
+                        consultIds.get(i), customerIds.get(i),
+                        "CHANGE", "mobile", newCode, oldCode));
+            }
         }
         if (!args.isEmpty()) {
             jdbcTemplate.batchUpdate(
