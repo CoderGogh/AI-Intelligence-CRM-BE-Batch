@@ -48,14 +48,16 @@ public class OutboundRawTextGenerator {
      * 원문 개인화에 필요한 고객 컨텍스트.
      * Factory가 DB에서 로드한 고객 정보를 이 형태로 전달한다.
      *
-     * @param name           고객 이름 (예: "홍길동")
-     * @param mobilePlanName 현재 활성 모바일 상품명 (예: "5G 프리미어 에센셜", nullable)
-     * @param homePlanName   현재 활성 홈/인터넷 상품명 (예: "기가인터넷 1G", nullable)
+     * @param name                 고객 이름 (예: "홍길동")
+     * @param mobilePlanName       현재 활성 모바일 상품명 (예: "5G 프리미어 에센셜", nullable)
+     * @param homePlanName         현재 활성 홈/인터넷 상품명 (예: "기가인터넷 1G", nullable)
+     * @param targetMobilePlanName 변경 대상 모바일 상품명 (FEE CONVERTED 시 사용, nullable)
      */
     public record CustomerContext(
             String name,
             String mobilePlanName,
-            String homePlanName
+            String homePlanName,
+            String targetMobilePlanName
     ) {}
 
     /**
@@ -69,7 +71,8 @@ public class OutboundRawTextGenerator {
             String complaintCategory,  // analysis_code.code_name (complaint_category 분류)
             String defenseCategory,    // analysis_code.code_name (defense_category 분류)
             String iamIssue,           // consultation_results.iam_issue
-            String iamAction           // consultation_results.iam_action
+            String iamAction,          // consultation_results.iam_action
+            boolean cancelProcessed    // REJECTED 상담에서 상담사가 실제 해지를 처리한 경우 true
     ) {}
 
     private record OutboundTemplate(
@@ -1397,6 +1400,10 @@ public class OutboundRawTextGenerator {
         };
         List<OutboundTemplate> pool = map.getOrDefault(outboundCategoryKey, TEMPLATES);
         OutboundTemplate t = pool.get(random.nextInt(pool.size()));
+        // REJECTED 상담에서 상담사가 실제 해지를 처리했는지 감지
+        boolean cancelProcessed = t.turns().stream()
+                .filter(turn -> "상담사".equals(turn.speaker()))
+                .anyMatch(turn -> turn.text().contains("해지 접수") || turn.text().contains("해지 처리"));
         List<Turn> personalizedTurns = personalize(t.turns(), categoryType, ctx);
         return new OutboundTextResult(
                 serialize(personalizedTurns),
@@ -1405,7 +1412,8 @@ public class OutboundRawTextGenerator {
                 t.complaintCategory(),
                 t.defenseCategory(),
                 t.iamIssue(),
-                t.iamAction()
+                t.iamAction(),
+                cancelProcessed
         );
     }
 
@@ -1429,14 +1437,36 @@ public class OutboundRawTextGenerator {
             // 1. 전체 발화에서 "고객님" → "{이름}님"
             String text = t.text().replace("고객님", ctx.name() + "님");
 
-            // 2. 첫 번째 상담사 발화에만 상품명 삽입
-            if (firstAgent && "상담사".equals(t.speaker())) {
-                text = injectProduct(text, categoryType, ctx);
-                firstAgent = false;
+            if ("상담사".equals(t.speaker())) {
+                // 2. 첫 번째 상담사 발화에 현재 구독 상품명 삽입
+                if (firstAgent) {
+                    text = injectProduct(text, categoryType, ctx);
+                    firstAgent = false;
+                }
+                // 3. 모든 상담사 발화에 대상 요금제명 삽입 (FEE CONVERTED 시)
+                if (ctx.targetMobilePlanName() != null) {
+                    text = injectTargetPlan(text, ctx.targetMobilePlanName());
+                }
             }
             result.add(new Turn(t.speaker(), text));
         }
         return result;
+    }
+
+    /**
+     * 상담사 발화에 변경 대상 요금제명을 삽입한다.
+     * FEE CONVERTED 시 "한 단계 낮은 요금제" 등의 표현을 실제 상품명으로 교체한다.
+     */
+    private String injectTargetPlan(String text, String targetPlan) {
+        text = text.replace("한 단계 낮은 요금제로도 충분하실 것 같습니다",
+                targetPlan + "으로도 충분하실 것 같습니다");
+        text = text.replace("요금제도 한 단계 낮추시면",
+                targetPlan + "으로 변경하시면");
+        text = text.replace("한 단계 낮은 요금제로 변경 시",
+                targetPlan + "으로 변경 시");
+        text = text.replace("요금제를 조정하는 것만으로도",
+                targetPlan + "으로 변경하는 것만으로도");
+        return text;
     }
 
     /**
