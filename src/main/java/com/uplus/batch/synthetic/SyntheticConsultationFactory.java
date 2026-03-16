@@ -406,14 +406,18 @@ public class SyntheticConsultationFactory {
                                    List<String> categoryCodes,
                                    List<SyntheticPersonMatcher.CustomerInfo> consultCustomers,
                                    ThreadLocalRandom random) {
-        boolean hasCodes = cacheDummy.getHomeProductCodes() != null && !cacheDummy.getHomeProductCodes().isEmpty()
-                && cacheDummy.getMobileProductCodes() != null && !cacheDummy.getMobileProductCodes().isEmpty()
-                && cacheDummy.getAdditionalProductCodes() != null && !cacheDummy.getAdditionalProductCodes().isEmpty();
-        if (!hasCodes) return;
+        // 코드가 있는 상품 유형만 후보로 포함 (없는 유형은 랜덤 선택 대상에서 제외)
+        List<String> availableProductTypes = new ArrayList<>();
+        if (cacheDummy.getMobileProductCodes() != null && !cacheDummy.getMobileProductCodes().isEmpty())
+            availableProductTypes.add("mobile");
+        if (cacheDummy.getHomeProductCodes() != null && !cacheDummy.getHomeProductCodes().isEmpty())
+            availableProductTypes.add("home");
+        if (cacheDummy.getAdditionalProductCodes() != null && !cacheDummy.getAdditionalProductCodes().isEmpty())
+            availableProductTypes.add("additional");
+        if (availableProductTypes.isEmpty()) return;
 
         List<Object[]> args = new ArrayList<>();
         String[] contractTypes = {"NEW", "CANCEL", "CHANGE", "RENEW"};
-        String[] productTypes  = {"home", "mobile", "additional"};
 
         for (int i = 0; i < consultIds.size(); i++) {
             int logCount;
@@ -432,7 +436,7 @@ public class SyntheticConsultationFactory {
                 } else {
                     contractType = contractTypes[random.nextInt(contractTypes.length)];
                 }
-                String productType = productTypes[random.nextInt(productTypes.length)];
+                String productType = availableProductTypes.get(random.nextInt(availableProductTypes.size()));
 
                 // 고객의 실제 구독 코드 우선 사용 (없으면 CacheDummy 풀에서 랜덤 선택)
                 String customerCode = "mobile".equals(productType) ? ci.mobileCode()
