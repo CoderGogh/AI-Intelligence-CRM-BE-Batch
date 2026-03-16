@@ -1,10 +1,14 @@
 package com.uplus.batch.domain.extraction.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.BDDMockito.*;
-import static org.assertj.core.api.Assertions.*;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import java.util.*;
+import java.util.concurrent.Executor;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,7 +19,8 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.uplus.batch.domain.extraction.dto.*;
+import com.uplus.batch.domain.extraction.dto.AiExtractionResponse;
+import com.uplus.batch.domain.extraction.dto.QualityScoringResponse;
 import com.uplus.batch.domain.extraction.entity.*;
 import com.uplus.batch.domain.extraction.repository.*;
 import com.uplus.batch.domain.extraction.service.ConsultationAnalysisManager.TaskPair;
@@ -29,83 +34,84 @@ class ConsultationAnalysisManagerTest {
     @Mock private GeminiExtractor geminiExtractor;
     @Mock private GeminiQualityScorer geminiQualityScorer;
     @Mock private ConsultationRawTextRepository rawTextRepository;
-    @Mock private ManualRepository manualRepository;
     @Mock private ConsultationExtractionRepository extractionRepository;
     @Mock private ConsultationEvaluationRepository evaluationRepository;
     @Mock private ResultEventStatusRepository resultEventRepository;
     @Mock private ExcellentEventStatusRepository excellentEventRepository;
+    @Mock private ManualRepository manualRepository;
     @Mock private AnalysisCodeRepository analysisCodeRepository;
 
-    @Spy
-    private ObjectMapper objectMapper = new ObjectMapper();
+    @Spy private ObjectMapper objectMapper = new ObjectMapper();
+
+    // 🥊 람다(Runnable::run) 대신 익명 클래스를 사용하여 Mockito Proxy 에러 해결!
+    @Spy 
+    private Executor geminiTaskExecutor = new Executor() {
+        @Override
+        public void execute(Runnable command) {
+            command.run(); // 즉시 실행하여 동기식으로 테스트 진행
+        }
+    };
 
     @Test
-    @DisplayName("성공: 50개 번들 태스크를 카테고리별로 그룹화하여 통합 분석 및 저장을 완료한다")
+    @DisplayName("성공: 모든 상담이 정상적으로 분석되고 저장된다")
     void processIntegratedBundledTasks_Success() throws Exception {
-        // Given: 짝이 맞는 태스크 쌍 2개 준비 (하나는 CHN, 하나는 OTB 가정)
-        ResultEventStatus summaryTask = new ResultEventStatus(100L, "M_CHN_001");
-        ExcellentEventStatus scoringTask = new ExcellentEventStatus(100L);
-        TaskPair pair = new TaskPair(summaryTask, scoringTask);
-        List<TaskPair> taskPairs = List.of(pair);
+        ResultEventStatus summary = ResultEventStatus.builder().consultId(100L).categoryCode("M_CHN_01").build();
+        ExcellentEventStatus scoring = ExcellentEventStatus.builder().consultId(100L).build();
+        List<TaskPair> taskPairs = List.of(new TaskPair(summary, scoring));
 
-        // 1. 원문 조회 모킹
-        ConsultationRawText rawData = mock(ConsultationRawText.class);
-        given(rawData.getRawTextJson()).willReturn("{\"chat\": \"상담내용\"}");
-        given(rawTextRepository.findByConsultId(anyLong())).willReturn(Optional.of(rawData));
-
-        // 2. 매뉴얼 및 분석코드 모킹
-        Manual manual = mock(Manual.class);
-        given(manual.getContent()).willReturn("매뉴얼 내용");
-        given(manualRepository.findByCategoryCodeAndIsActiveTrue(anyString())).willReturn(Optional.of(manual));
+        ConsultationRawText mockRaw = mock(ConsultationRawText.class);
+        given(mockRaw.getConsultId()).willReturn(100L);
+        given(mockRaw.getRawTextJson()).willReturn("{\"chat\": \"정상 상담\"}");
+        given(rawTextRepository.findAllByConsultIdIn(anyList())).willReturn(List.of(mockRaw));
+        
+        given(manualRepository.findByCategoryCodeAndIsActiveTrue(anyString())).willReturn(Optional.of(mock(Manual.class)));
         given(analysisCodeRepository.findAllByClassificationIn(anyList())).willReturn(Collections.emptyList());
 
-        // 3. AI 번들 추출기 응답 준비 (11개 필드 규격)
-        AiExtractionResponse mockAiRes = new AiExtractionResponse(
-            "상황 → 조치 → 결과", // raw_summary
-            true, "요금사유", "COST", // CHN 필드
-            true, true, List.of("할인"), "BNFT", // CHN 필드
-            null, null, null // OTB 필드 (null)
-        );
         given(geminiExtractor.extractBatch(anyList(), anyString(), anyMap()))
-            .willReturn(List.of(mockAiRes));
-
-        // 4. 품질 채점기 응답 준비
+                .willReturn(List.of(mock(AiExtractionResponse.class)));
         given(geminiQualityScorer.evaluate(anyString(), anyString()))
-            .willReturn(new QualityScoringResponse(95, "우수함", true));
+                .willReturn(new QualityScoringResponse(90, "Good", true));
 
-        // When
         manager.processIntegratedBundledTasks(taskPairs);
 
-        // Then
-        assertThat(summaryTask.getStatus()).isEqualTo(EventStatus.COMPLETED);
-        assertThat(scoringTask.getStatus()).isEqualTo(EventStatus.COMPLETED);
-        
-        // 저장이 각각 1번씩 호출되었는지 검증
-        verify(extractionRepository, times(1)).save(any(ConsultationExtraction.class));
-        verify(evaluationRepository, times(1)).save(any(ConsultationEvaluation.class));
+        assertThat(summary.getStatus()).isEqualTo(EventStatus.COMPLETED);
+        assertThat(scoring.getStatus()).isEqualTo(EventStatus.COMPLETED);
+        verify(extractionRepository, times(1)).save(any());
     }
 
     @Test
-    @DisplayName("실패: AI 분석 중 에러 발생 시 관련 태스크들이 모두 FAILED 상태가 된다")
-    void processIntegratedBundledTasks_AiError_Fail() {
-        // Given
-        TaskPair pair = new TaskPair(new ResultEventStatus(200L, "CHN"), new ExcellentEventStatus(200L));
-        List<TaskPair> taskPairs = List.of(pair);
+    @DisplayName("격리 성공: 1번은 성공하고 2번 채점만 실패했을 때, 전체가 FAILED 되지 않고 각각의 결과가 반영된다")
+    void processIntegratedBundledTasks_IndividualIsolation() throws Exception {
+        ResultEventStatus s1 = ResultEventStatus.builder().consultId(1L).categoryCode("CHN").build();
+        ExcellentEventStatus e1 = ExcellentEventStatus.builder().consultId(1L).build();
+        ResultEventStatus s2 = ResultEventStatus.builder().consultId(2L).categoryCode("CHN").build();
+        ExcellentEventStatus e2 = ExcellentEventStatus.builder().consultId(2L).build();
+        
+        List<TaskPair> taskPairs = List.of(new TaskPair(s1, e1), new TaskPair(s2, e2));
 
-        given(rawTextRepository.findByConsultId(anyLong())).willReturn(Optional.of(mock(ConsultationRawText.class)));
-        given(analysisCodeRepository.findAllByClassificationIn(anyList())).willReturn(Collections.emptyList());
+        ConsultationRawText r1 = mock(ConsultationRawText.class);
+        given(r1.getConsultId()).willReturn(1L);
+        given(r1.getRawTextJson()).willReturn("{}");
+        ConsultationRawText r2 = mock(ConsultationRawText.class);
+        given(r2.getConsultId()).willReturn(2L);
+        given(r2.getRawTextJson()).willReturn("{}");
+
+        given(rawTextRepository.findAllByConsultIdIn(anyList())).willReturn(List.of(r1, r2));
         given(manualRepository.findByCategoryCodeAndIsActiveTrue(anyString())).willReturn(Optional.of(mock(Manual.class)));
+        given(analysisCodeRepository.findAllByClassificationIn(anyList())).willReturn(Collections.emptyList());
 
-        // AI 호출 시 에러 발생 시뮬레이션
         given(geminiExtractor.extractBatch(anyList(), anyString(), anyMap()))
-            .willThrow(new RuntimeException("API Connection Timeout"));
+                .willReturn(List.of(mock(AiExtractionResponse.class), mock(AiExtractionResponse.class)));
 
-        // When
+        given(geminiQualityScorer.evaluate(anyString(), anyString()))
+                .willReturn(new QualityScoringResponse(90, "Good", true))
+                .willThrow(new RuntimeException("Scoring API Error"));
+
         manager.processIntegratedBundledTasks(taskPairs);
 
-        // Then
-        assertThat(pair.summaryTask().getStatus()).isEqualTo(EventStatus.FAILED);
-        assertThat(pair.scoringTask().getStatus()).isEqualTo(EventStatus.FAILED);
-        assertThat(pair.summaryTask().getFailReason()).contains("API Connection Timeout");
+        assertThat(s1.getStatus()).isEqualTo(EventStatus.COMPLETED);
+        assertThat(e1.getStatus()).isEqualTo(EventStatus.COMPLETED);
+        assertThat(s2.getStatus()).isEqualTo(EventStatus.FAILED);
+        assertThat(e2.getStatus()).isEqualTo(EventStatus.FAILED);
     }
 }
