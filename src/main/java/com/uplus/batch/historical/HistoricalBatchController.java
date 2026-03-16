@@ -96,7 +96,7 @@ public class HistoricalBatchController {
                         "inboundPerDay", inboundPerDay,
                         "outboundPerDay", outboundPerDay,
                         "chunkSize", properties.getChunkSize(),
-                        "note", "인바운드: AI·요약 트리거 생성. 아웃바운드: retention_analysis 더미 데이터 직접 삽입."
+                        "note", "인바운드·아웃바운드 모두 AI 추출(result_event_status)·요약(summary_event_status) 트리거 생성."
                 )
         ));
     }
