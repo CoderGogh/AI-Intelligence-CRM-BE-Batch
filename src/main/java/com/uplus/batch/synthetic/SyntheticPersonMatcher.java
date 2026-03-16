@@ -39,6 +39,7 @@ public class SyntheticPersonMatcher {
     @Getter private List<String> otbUpsellCodes; // 아웃바운드 UPSELL (M_OTB_02 업셀링)
     @Getter private List<String> otbArrearsCodes;// 아웃바운드 ARREARS (M_OTB_04 연체안내)
     @Getter private List<String> otbTrbCodes;    // 아웃바운드 TRB (M_OTB_03 사후관리, M_OTB_06 해피콜)
+    @Getter private List<String> otbNewSubsCodes; // 아웃바운드 NEW_SUBS (M_OTB_07 신규가입권유)
 
     // ─────────────────────────────────────────────────────────
     //  DTO
@@ -70,10 +71,10 @@ public class SyntheticPersonMatcher {
         loadCustomers();
         loadCategoryCodesByType();
         log.info("[SyntheticPersonMatcher] 초기화 완료 — 상담사: {}명, 고객: {}명, " +
-                "인바운드[CHN:{} TRB:{} FEE:{} 기타:{}] 아웃바운드[CHN:{} UPSELL:{} ARREARS:{} TRB:{}]",
+                "인바운드[CHN:{} TRB:{} FEE:{} 기타:{}] 아웃바운드[CHN:{} UPSELL:{} ARREARS:{} TRB:{} NEW_SUBS:{}]",
                 agents.size(), customers.size(),
                 chnCodes.size(), trbCodes.size(), feeCodes.size(), otherCodes.size(),
-                otbChnCodes.size(), otbUpsellCodes.size(), otbArrearsCodes.size(), otbTrbCodes.size());
+                otbChnCodes.size(), otbUpsellCodes.size(), otbArrearsCodes.size(), otbTrbCodes.size(), otbNewSubsCodes.size());
     }
 
     private void loadAgents() {
@@ -146,6 +147,7 @@ public class SyntheticPersonMatcher {
         otbUpsellCodes = all.stream().filter(c -> c.equals("M_OTB_02")).collect(Collectors.toList());
         otbArrearsCodes= all.stream().filter(c -> c.equals("M_OTB_04")).collect(Collectors.toList());
         otbTrbCodes    = all.stream().filter(c -> c.equals("M_OTB_03") || c.equals("M_OTB_06")).collect(Collectors.toList());
+        otbNewSubsCodes= all.stream().filter(c -> c.equals("M_OTB_07")).collect(Collectors.toList());
         chnCodes   = all.stream().filter(c -> c.contains("CHN")).collect(Collectors.toList());
         trbCodes   = all.stream().filter(c -> c.contains("TRB")).collect(Collectors.toList());
         feeCodes   = all.stream().filter(c -> c.contains("FEE")).collect(Collectors.toList());
@@ -159,6 +161,7 @@ public class SyntheticPersonMatcher {
         if (otbUpsellCodes.isEmpty())  otbUpsellCodes = allOtb;
         if (otbArrearsCodes.isEmpty()) otbArrearsCodes= allOtb;
         if (otbTrbCodes.isEmpty())     otbTrbCodes    = allOtb;
+        if (otbNewSubsCodes.isEmpty()) otbNewSubsCodes = allOtb;
         if (chnCodes.isEmpty())   chnCodes   = all;
         if (trbCodes.isEmpty())   trbCodes   = all;
         if (feeCodes.isEmpty())   feeCodes   = all;
