@@ -35,7 +35,10 @@ public class SyntheticPersonMatcher {
     @Getter private List<String> trbCodes;   // 장애/AS    20% (인바운드 전용)
     @Getter private List<String> feeCodes;   // 요금/납부  20% (인바운드 전용)
     @Getter private List<String> otherCodes; // 기타       20% (인바운드 전용, OTB 제외)
-    @Getter private List<String> otbCodes;   // 아웃바운드 전용 (M_OTB_*)
+    @Getter private List<String> otbChnCodes;    // 아웃바운드 CHN (M_OTB_01 재약정권유, M_OTB_05 윈백)
+    @Getter private List<String> otbUpsellCodes; // 아웃바운드 UPSELL (M_OTB_02 업셀링)
+    @Getter private List<String> otbArrearsCodes;// 아웃바운드 ARREARS (M_OTB_04 연체안내)
+    @Getter private List<String> otbTrbCodes;    // 아웃바운드 TRB (M_OTB_03 사후관리, M_OTB_06 해피콜)
 
     // ─────────────────────────────────────────────────────────
     //  DTO
@@ -66,9 +69,11 @@ public class SyntheticPersonMatcher {
         loadAgents();
         loadCustomers();
         loadCategoryCodesByType();
-        log.info("[SyntheticPersonMatcher] 초기화 완료 — 상담사: {}명, 고객: {}명, CHN: {}, TRB: {}, FEE: {}, 기타: {}, OTB: {}",
+        log.info("[SyntheticPersonMatcher] 초기화 완료 — 상담사: {}명, 고객: {}명, " +
+                "인바운드[CHN:{} TRB:{} FEE:{} 기타:{}] 아웃바운드[CHN:{} UPSELL:{} ARREARS:{} TRB:{}]",
                 agents.size(), customers.size(),
-                chnCodes.size(), trbCodes.size(), feeCodes.size(), otherCodes.size(), otbCodes.size());
+                chnCodes.size(), trbCodes.size(), feeCodes.size(), otherCodes.size(),
+                otbChnCodes.size(), otbUpsellCodes.size(), otbArrearsCodes.size(), otbTrbCodes.size());
     }
 
     private void loadAgents() {
@@ -137,7 +142,10 @@ public class SyntheticPersonMatcher {
                 String.class
         );
 
-        otbCodes   = all.stream().filter(c -> c.startsWith("M_OTB")).collect(Collectors.toList());
+        otbChnCodes    = all.stream().filter(c -> c.equals("M_OTB_01") || c.equals("M_OTB_05")).collect(Collectors.toList());
+        otbUpsellCodes = all.stream().filter(c -> c.equals("M_OTB_02")).collect(Collectors.toList());
+        otbArrearsCodes= all.stream().filter(c -> c.equals("M_OTB_04")).collect(Collectors.toList());
+        otbTrbCodes    = all.stream().filter(c -> c.equals("M_OTB_03") || c.equals("M_OTB_06")).collect(Collectors.toList());
         chnCodes   = all.stream().filter(c -> c.contains("CHN")).collect(Collectors.toList());
         trbCodes   = all.stream().filter(c -> c.contains("TRB")).collect(Collectors.toList());
         feeCodes   = all.stream().filter(c -> c.contains("FEE")).collect(Collectors.toList());
@@ -145,8 +153,12 @@ public class SyntheticPersonMatcher {
                 .filter(c -> !c.startsWith("M_OTB") && !c.contains("CHN") && !c.contains("TRB") && !c.contains("FEE"))
                 .collect(Collectors.toList());
 
-        // 폴백: 코드가 없는 유형은 전체에서 샘플링
-        if (otbCodes.isEmpty())   otbCodes   = all.stream().filter(c -> c.startsWith("M_OTB")).collect(Collectors.toList());
+        // 폴백: 코드가 없는 유형은 M_OTB 전체에서 샘플링
+        List<String> allOtb = all.stream().filter(c -> c.startsWith("M_OTB")).collect(Collectors.toList());
+        if (otbChnCodes.isEmpty())     otbChnCodes    = allOtb;
+        if (otbUpsellCodes.isEmpty())  otbUpsellCodes = allOtb;
+        if (otbArrearsCodes.isEmpty()) otbArrearsCodes= allOtb;
+        if (otbTrbCodes.isEmpty())     otbTrbCodes    = allOtb;
         if (chnCodes.isEmpty())   chnCodes   = all;
         if (trbCodes.isEmpty())   trbCodes   = all;
         if (feeCodes.isEmpty())   feeCodes   = all;
