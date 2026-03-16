@@ -149,23 +149,22 @@ public class ChurnDefenseStatsTasklet implements Tasklet {
             }
 
             // 방어 액션별
-            List<String> actions = cancellation.getList("defenseCategory", String.class);
-            if (actions != null && defenseAttempted) {
-                for (String action : actions) {
-                    int[] aCounts = actionMap.computeIfAbsent(action, k -> new int[2]);
-                    aCounts[0]++;
-                    if (defenseSuccess) aCounts[1]++;
+          String defenseAction = cancellation.getString("defenseCategory");
+          if (defenseAction != null && !defenseAction.isBlank() && defenseAttempted) {
+            // 기존에 for문을 돌던 로직을 단일 액션 처리로 변경
+            int[] aCounts = actionMap.computeIfAbsent(defenseAction, k -> new int[2]);
+            aCounts[0]++; // attempts
+            if (defenseSuccess) aCounts[1]++; // success
 
-                    // 액션별 불만 사유 교차 집계
-                    if (complaintReason != null && !complaintReason.isBlank()) {
-                        int[] arStats = actionReasonMap
-                                .computeIfAbsent(action, k -> new HashMap<>())
-                                .computeIfAbsent(complaintReason, k -> new int[2]);
-                        arStats[0]++;
-                        if (defenseSuccess) arStats[1]++;
-                    }
-                }
+            // 액션별 불만 사유 교차 집계
+            if (complaintReason != null && !complaintReason.isBlank()) {
+              int[] arStats = actionReasonMap
+                  .computeIfAbsent(defenseAction, k -> new HashMap<>())
+                  .computeIfAbsent(complaintReason, k -> new int[2]);
+              arStats[0]++;
+              if (defenseSuccess) arStats[1]++;
             }
+          }
         }
 
         // 5. 결과 Document 조립
