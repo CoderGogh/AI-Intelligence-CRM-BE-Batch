@@ -38,8 +38,6 @@ public class Manual {
 
     private Long empId; // 상담원 ID (참조용)
 
-    private String createdBy;
-
     @CreationTimestamp
     private LocalDateTime createdAt;
 
