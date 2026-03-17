@@ -98,12 +98,16 @@ public class OutboundRawTextGenerator {
     private static final Map<String, List<OutboundTemplate>> UPSELL_TEMPLATE_MAP = new LinkedHashMap<>();
     private static final Map<String, List<OutboundTemplate>> ARREARS_TEMPLATE_MAP = new LinkedHashMap<>();
     private static final Map<String, List<OutboundTemplate>> TRB_TEMPLATE_MAP    = new LinkedHashMap<>();
+    /** NEW_SUBS 계열 (신규가입권유: 신규 서비스 가입 유도) 템플릿 */
+    private static final List<OutboundTemplate> NEW_SUBS_TEMPLATES = new ArrayList<>();
+    private static final Map<String, List<OutboundTemplate>> NEW_SUBS_TEMPLATE_MAP = new LinkedHashMap<>();
 
     static {
         buildChnTemplates();
         buildUpsellTemplates();
         buildArrearsTemplates();
         buildTrbTemplates();
+        buildNewSubsTemplates();
         for (OutboundTemplate t : TEMPLATES) {
             String key = "CONVERTED".equals(t.callResult()) ? "CONVERTED" : t.outboundCategory();
             TEMPLATE_MAP.computeIfAbsent(key, k -> new ArrayList<>()).add(t);
@@ -119,6 +123,10 @@ public class OutboundRawTextGenerator {
         for (OutboundTemplate t : TRB_TEMPLATES) {
             String key = "CONVERTED".equals(t.callResult()) ? "CONVERTED" : t.outboundCategory();
             TRB_TEMPLATE_MAP.computeIfAbsent(key, k -> new ArrayList<>()).add(t);
+        }
+        for (OutboundTemplate t : NEW_SUBS_TEMPLATES) {
+            String key = "CONVERTED".equals(t.callResult()) ? "CONVERTED" : t.outboundCategory();
+            NEW_SUBS_TEMPLATE_MAP.computeIfAbsent(key, k -> new ArrayList<>()).add(t);
         }
     }
 
@@ -1470,6 +1478,97 @@ public class OutboundRawTextGenerator {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    //  NEW_SUBS 계열 템플릿 (신규가입권유: 신규 서비스 가입 유도)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static void buildNewSubsTemplates() {
+        buildNewSubsConverted();
+        buildNewSubsRejectedNoNeed();
+        buildNewSubsRejectedConsider();
+        buildNewSubsRejectedOther();
+    }
+
+    /** NEW-SUBS-CONV-1: 5G 신규 가입 — 첫 3개월 요금 할인 혜택 제공 → 가입 성공 */
+    private static void buildNewSubsConverted() {
+        NEW_SUBS_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 고객님께 맞는 5G 신규 가입 혜택을 안내드리고자 연락드렸습니다."),
+                c("네, 말씀하세요."),
+                a("현재 신규 가입 고객님께 첫 3개월 월 요금 50% 할인과 함께 공시지원금 최대 30만원을 제공해드리고 있습니다. 현재 이용 중이신 요금제보다 혜택이 크실 것 같아 연락드렸습니다."),
+                c("요금 할인이 얼마나 되는 건가요?"),
+                a("현재 5G 프리미어 요금제 기준 월 55,000원에서 3개월간 27,500원으로 이용 가능합니다. 공시지원금까지 더하면 첫 해 절감 효과가 상당합니다."),
+                c("그 정도면 괜찮네요. 신규 가입 진행하겠습니다."),
+                a("감사합니다. 신규 가입 처리 및 할인 혜택 적용 완료해드리겠습니다. 좋은 하루 보내세요.")
+            ),
+            "CONVERTED", null, null, "BNFT_DISCOUNT",
+            "5G 신규 가입 할인 혜택 안내 아웃바운드",
+            "첫 3개월 요금 50% 할인 및 공시지원금 안내 후 신규 가입 완료"
+        ));
+
+        /** NEW-SUBS-CONV-2: 모바일+인터넷 결합 신규 가입 — 결합 할인 강조 → 가입 성공 */
+        NEW_SUBS_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 모바일과 인터넷을 함께 가입하시면 월 최대 22,000원 결합 할인을 받으실 수 있어 안내드리고자 연락드렸습니다."),
+                c("결합하면 요금이 그렇게 많이 줄어요?"),
+                a("네, 모바일 5G 요금제와 기가인터넷을 함께 신규 가입하시면 각각 할인이 적용되어 월 22,000원까지 절감 가능합니다. 첫 달 이용 요금도 면제입니다."),
+                c("첫 달 무료에 결합 할인까지 받을 수 있군요. 가입할게요."),
+                a("감사합니다. 모바일 및 인터넷 결합 신규 가입 처리 완료해드리겠습니다. 좋은 하루 보내세요.")
+            ),
+            "CONVERTED", null, null, "CONTRACT_RENEW",
+            "모바일+인터넷 결합 신규 가입 혜택 안내 아웃바운드",
+            "결합 할인 및 첫 달 면제 혜택 안내 후 신규 결합 가입 완료"
+        ));
+    }
+
+    /** NEW-SUBS-NO_NEED-1: 현재 타사 서비스에 만족 → 신규 가입 불필요 거절 */
+    private static void buildNewSubsRejectedNoNeed() {
+        NEW_SUBS_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 5G 신규 가입 혜택을 안내드리고자 연락드렸습니다."),
+                c("지금 다른 통신사 이용 중인데 딱히 바꿀 생각이 없어요."),
+                a("이해합니다. 혹시 현재 요금이나 서비스 품질에서 아쉬운 점이 있으시다면 저희가 더 나은 조건을 제시해드릴 수 있습니다."),
+                c("지금 이용 중인 서비스에 불만이 없어서요. 괜찮습니다."),
+                a("고객님 의사 존중합니다. 혜택이 변경되면 다시 안내드리겠습니다. 좋은 하루 보내세요.")
+            ),
+            "REJECTED", "NO_NEED", "COMP_BENEFIT", "ADM_GUIDE",
+            "타사 이용 고객 5G 신규 가입 유도 아웃바운드",
+            "신규 가입 혜택 안내하였으나 타사 서비스 만족으로 가입 불필요 거절 확인"
+        ));
+    }
+
+    /** NEW-SUBS-CONSIDER-1: 가족 상의 후 결정하겠다고 유보 */
+    private static void buildNewSubsRejectedConsider() {
+        NEW_SUBS_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 신규 가입 시 특별 혜택을 안내드리고자 연락드렸습니다."),
+                c("요금 할인이 있다니 솔깃하네요. 그런데 가족이랑 같이 결합 가입을 생각하고 있어서요."),
+                a("결합 신규 가입도 가능합니다. 가족 회선 수에 따라 추가 할인도 적용됩니다."),
+                c("가족과 상의하고 연락드릴게요. 프로모션 기간이 언제까지인가요?"),
+                a("이번 달 말일까지 적용 가능합니다. 결정하시면 언제든지 연락 주세요. 좋은 하루 보내세요.")
+            ),
+            "REJECTED", "CONSIDER", "COMP_BENEFIT", "ADM_GUIDE",
+            "가족 결합 신규 가입 검토 고객 아웃바운드",
+            "결합 신규 가입 혜택 안내 후 가족 상의 필요로 결정 유보"
+        ));
+    }
+
+    /** NEW-SUBS-OTHER-1: 기타 개인 사정으로 거절 */
+    private static void buildNewSubsRejectedOther() {
+        NEW_SUBS_TEMPLATES.add(new OutboundTemplate(
+            List.of(
+                a("안녕하세요, 고객님. LG U+ 입니다. 5G 요금제 신규 가입 혜택을 안내드리고자 연락드렸습니다."),
+                c("지금 당장은 통신 요금제를 바꿀 상황이 안 돼서요."),
+                a("충분히 이해합니다. 혹시 특별히 불편하신 점이 있으신지 여쭤봐도 될까요?"),
+                c("개인 사정이 있어서요. 지금은 어렵습니다."),
+                a("고객님 의사 존중합니다. 나중에 필요하실 때 언제든지 연락 주세요. 좋은 하루 보내세요.")
+            ),
+            "REJECTED", "OTHER", null, "ADM_CLOSE_FAIL",
+            "신규 가입 제안 아웃바운드",
+            "5G 신규 가입 혜택 안내하였으나 개인 사정 기타 사유로 거절 확인"
+        ));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     //  공개 API
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -1489,10 +1588,11 @@ public class OutboundRawTextGenerator {
     public OutboundTextResult generate(String categoryType, String outboundCategoryKey,
                                        Random random, CustomerContext ctx) {
         Map<String, List<OutboundTemplate>> map = switch (categoryType) {
-            case "UPSELL"  -> UPSELL_TEMPLATE_MAP;
-            case "ARREARS" -> ARREARS_TEMPLATE_MAP;
-            case "TRB"     -> TRB_TEMPLATE_MAP;
-            default        -> TEMPLATE_MAP;
+            case "UPSELL"    -> UPSELL_TEMPLATE_MAP;
+            case "ARREARS"   -> ARREARS_TEMPLATE_MAP;
+            case "TRB"       -> TRB_TEMPLATE_MAP;
+            case "NEW_SUBS"  -> NEW_SUBS_TEMPLATE_MAP;
+            default          -> TEMPLATE_MAP;
         };
         List<OutboundTemplate> pool = map.getOrDefault(outboundCategoryKey, TEMPLATES);
         OutboundTemplate t = pool.get(random.nextInt(pool.size()));
@@ -1591,6 +1691,8 @@ public class OutboundRawTextGenerator {
             p = hasHomeContext ? (home != null ? home : mobile) : (mobile != null ? mobile : home);
         } else if ("ARREARS".equals(categoryType)) {
             p = mobile != null ? mobile : home; // 연체안내: 모바일 요금 우선
+        } else if ("NEW_SUBS".equals(categoryType)) {
+            p = mobile != null ? mobile : home; // 신규가입권유: 모바일 상품 우선
         } else { // CHN
             boolean hasHomeContext = text.contains("인터넷") || text.contains("이전 설치");
             p = hasHomeContext ? (home != null ? home : mobile) : (mobile != null ? mobile : home);
