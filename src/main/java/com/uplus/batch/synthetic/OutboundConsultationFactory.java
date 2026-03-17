@@ -86,7 +86,8 @@ public class OutboundConsultationFactory {
         var otbChnCodes    = personMatcher.getOtbChnCodes();
         var otbUpsellCodes = personMatcher.getOtbUpsellCodes();
         var otbArrearsCodes= personMatcher.getOtbArrearsCodes();
-        var otbTrbCodes    = personMatcher.getOtbTrbCodes();
+        var otbTrbCodes     = personMatcher.getOtbTrbCodes();
+        var otbNewSubsCodes = personMatcher.getOtbNewSubsCodes();
 
         if (agents.isEmpty() || customers.isEmpty() || otbChnCodes.isEmpty()) {
             log.warn("[OutboundFactory] 상담사·고객·OTB 카테고리 없음 — Step1 스킵");
@@ -115,24 +116,26 @@ public class OutboundConsultationFactory {
         for (int i = 0; i < batchSize; i++) {
             var agent    = agents.get(random.nextInt(agents.size()));
             var customer = customers.get(random.nextInt(customers.size()));
-            String categoryType = pickCategoryType(random.nextInt(100)); // CHN 50% / UPSELL 15% / ARREARS 10% / TRB 25%
+            String categoryType = pickCategoryType(random.nextInt(100)); // CHN 30% / NEW_SUBS 30% / UPSELL 20% / ARREARS 10% / TRB 10%
             List<String> otbPool = switch (categoryType) {
-                case "UPSELL"  -> otbUpsellCodes;
-                case "ARREARS" -> otbArrearsCodes;
-                case "TRB"     -> otbTrbCodes;
-                default        -> otbChnCodes;
+                case "UPSELL"   -> otbUpsellCodes;
+                case "ARREARS"  -> otbArrearsCodes;
+                case "TRB"      -> otbTrbCodes;
+                case "NEW_SUBS" -> otbNewSubsCodes;
+                default         -> otbChnCodes;
             };
             String categoryCode = otbPool.get(random.nextInt(otbPool.size())); // M_OTB_* (타입 연동)
             int durationSec = 120 + random.nextInt(481); // CALL: 120~600s
 
             String outboundCategoryKey = pickOutboundCategoryKey(categoryType, random.nextInt(100));
 
-            // UPSELL CONVERTED 시 변경 대상 요금제 코드·명칭 사전 선택
+            // UPSELL / NEW_SUBS CONVERTED 시 변경 대상 요금제 코드·명칭 사전 선택
             boolean willConvert = "CONVERTED".equals(outboundCategoryKey);
-            boolean isUpsellConverted = willConvert && "UPSELL".equals(categoryType)
-                    && cacheDummy.getMobileProductCodes() != null
+            boolean hasMobileCodes = cacheDummy.getMobileProductCodes() != null
                     && !cacheDummy.getMobileProductCodes().isEmpty();
-            String targetMobileCode = isUpsellConverted
+            boolean isUpsellConverted  = willConvert && "UPSELL".equals(categoryType)   && hasMobileCodes;
+            boolean isNewSubsConverted = willConvert && "NEW_SUBS".equals(categoryType) && hasMobileCodes;
+            String targetMobileCode = (isUpsellConverted || isNewSubsConverted)
                     ? pickDifferentCode("mobile",
                             customer.mobileCode() != null ? customer.mobileCode() : "", random)
                     : null;
@@ -362,6 +365,14 @@ public class OutboundConsultationFactory {
                 args.add(buildProductLogArgs(
                         consultIds.get(i), customerIds.get(i),
                         "CHANGE", "mobile", newCode, oldCode));
+            } else if ("NEW_SUBS".equals(categoryType)) {
+                // 신규 가입: 새 상품 코드로 NEW 계약 등록
+                String newCode = targetMobileCodes.get(i) != null
+                        ? targetMobileCodes.get(i)
+                        : pickProductCode("mobile", random);
+                args.add(buildProductLogArgs(
+                        consultIds.get(i), customerIds.get(i),
+                        "NEW", "mobile", newCode, null));
             }
         }
         if (!args.isEmpty()) {
@@ -448,10 +459,11 @@ public class OutboundConsultationFactory {
      */
     private String pickOutboundCategoryKey(String categoryType, int roll) {
         return switch (categoryType) {
-            case "UPSELL"  -> pickUpsellOutboundCategoryKey(roll);
-            case "ARREARS" -> pickArrearsOutboundCategoryKey(roll);
-            case "TRB"     -> pickTrbOutboundCategoryKey(roll);
-            default        -> pickChnOutboundCategoryKey(roll);
+            case "UPSELL"   -> pickUpsellOutboundCategoryKey(roll);
+            case "ARREARS"  -> pickArrearsOutboundCategoryKey(roll);
+            case "TRB"      -> pickTrbOutboundCategoryKey(roll);
+            case "NEW_SUBS" -> pickNewSubsOutboundCategoryKey(roll);
+            default         -> pickChnOutboundCategoryKey(roll);
         };
     }
 
@@ -466,12 +478,12 @@ public class OutboundConsultationFactory {
         return "OTHER";
     }
 
-    /** UPSELL: CONVERTED 60% / COST 20% / CONSIDER 10% / NO_NEED 7% / OTHER 3% */
+    /** UPSELL: CONVERTED 55% / COST 22% / CONSIDER 12% / NO_NEED 7% / OTHER 4% */
     private String pickUpsellOutboundCategoryKey(int roll) {
-        if (roll < 60) return "CONVERTED";
-        if (roll < 80) return "COST";
-        if (roll < 90) return "CONSIDER";
-        if (roll < 97) return "NO_NEED";
+        if (roll < 55) return "CONVERTED";
+        if (roll < 77) return "COST";
+        if (roll < 89) return "CONSIDER";
+        if (roll < 96) return "NO_NEED";
         return "OTHER";
     }
 
@@ -483,21 +495,30 @@ public class OutboundConsultationFactory {
         return "OTHER";
     }
 
-    /** TRB: CONVERTED 35% / DISSATISFIED 35% / CONSIDER 14% / SWITCH 10% / OTHER 6% */
+    /** TRB: CONVERTED 45% / DISSATISFIED 27% / CONSIDER 14% / SWITCH 9% / OTHER 5% */
     private String pickTrbOutboundCategoryKey(int roll) {
-        if (roll < 35) return "CONVERTED";
-        if (roll < 70) return "DISSATISFIED";
-        if (roll < 84) return "CONSIDER";
-        if (roll < 94) return "SWITCH";
+        if (roll < 45) return "CONVERTED";
+        if (roll < 72) return "DISSATISFIED";
+        if (roll < 86) return "CONSIDER";
+        if (roll < 95) return "SWITCH";
         return "OTHER";
     }
 
-    /** 카테고리 유형 선택: CHN 50% / TRB 25% / UPSELL 15% / ARREARS 10% */
+    /** NEW_SUBS: CONVERTED 60% / NO_NEED 20% / CONSIDER 13% / OTHER 7% */
+    private String pickNewSubsOutboundCategoryKey(int roll) {
+        if (roll < 60) return "CONVERTED";
+        if (roll < 80) return "NO_NEED";
+        if (roll < 93) return "CONSIDER";
+        return "OTHER";
+    }
+
+    /** 카테고리 유형 선택: CHN 30% / NEW_SUBS 30% / UPSELL 20% / ARREARS 10% / TRB 10% */
     private String pickCategoryType(int roll) {
-        if (roll < 50) return "CHN";
-        if (roll < 75) return "TRB";
-        if (roll < 90) return "UPSELL";
-        return "ARREARS";
+        if (roll < 30) return "CHN";
+        if (roll < 60) return "NEW_SUBS";
+        if (roll < 80) return "UPSELL";
+        if (roll < 90) return "ARREARS";
+        return "TRB";
     }
 
     private LocalDateTime randomBusinessTime(LocalDate targetDate, ThreadLocalRandom random) {
