@@ -165,6 +165,7 @@ public class HistoricalBatchService {
             }
 
             consultationFactory.triggerAiExtraction(result.consultIds(), result.categoryCodes());
+            consultationFactory.triggerExcellentScoring(result.consultIds());
             consultationFactory.triggerSummaryGeneration(result.consultIds());
 
             done += result.consultIds().size();
