@@ -103,7 +103,7 @@ public class GeminiQualityScorer {
         return Map.of(
             "contents", List.of(Map.of("parts", List.of(Map.of("text", prompt)))),
             "generationConfig", Map.of(
-                "temperature", 0.1, // 채점의 일관성을 위해 낮은 온도로 설정
+                "temperature", 0.1, 
                 "response_mime_type", "application/json"
             )
         );

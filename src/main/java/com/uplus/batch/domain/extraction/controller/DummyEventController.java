@@ -143,14 +143,10 @@ public class DummyEventController {
         log.info("[Dummy] 분석 및 채점 테이블 초기화 시작 (retention_analysis, consultation_evaluations)");
         try {
             jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 0");
-
-            jdbcTemplate.execute("TRUNCATE TABLE retention_analysis");      // 요약 및 해지방어 추출 결과
-            jdbcTemplate.execute("TRUNCATE TABLE consultation_evaluations"); // AI 점수 및 채점 결과
-            
-            // 상태 관리 테이블들
+            jdbcTemplate.execute("TRUNCATE TABLE retention_analysis");      
+            jdbcTemplate.execute("TRUNCATE TABLE consultation_evaluations");
             jdbcTemplate.execute("TRUNCATE TABLE result_event_status");
             jdbcTemplate.execute("TRUNCATE TABLE excellent_event_status");
-
             jdbcTemplate.execute("SET FOREIGN_KEY_CHECKS = 1");
 
             log.info("[Dummy] 모든 관련 테이블 초기화 완료");

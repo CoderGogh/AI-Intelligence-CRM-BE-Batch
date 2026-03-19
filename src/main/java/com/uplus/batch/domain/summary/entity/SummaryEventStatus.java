@@ -30,13 +30,12 @@ import java.time.LocalDateTime;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SummaryEventStatus {
 
-    // DB 기존 DDL: PK 컬럼명 = "id" (summary_event_id가 아님)
+    // DB 기존 DDL: PK 컬럼명 = "id" 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id")
     private Long summaryEventId;
 
-    // DB DDL: unique 제약 없음 (복합 인덱스만 존재)
     @Column(name = "consult_id", nullable = false)
     private Long consultId;
 

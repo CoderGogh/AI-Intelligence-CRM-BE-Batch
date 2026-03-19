@@ -35,7 +35,6 @@ public class ReindexController {
   private static final String SEARCH_INDEX   = "consult-search-index";
   private static final String KEYWORD_INDEX  = "consult-keyword-index";
 
-  // prod 사전 경로 치환 매핑 (local → prod)
   private static final Map<String, String> PROD_PATH_MAP = Map.of(
       "analysis/userdict.txt",            "analyzers/F187334599",
       "analysis/analysis_userdict.txt",   "analyzers/F125541068",
@@ -95,28 +94,24 @@ public class ReindexController {
   // -----------------------------------------------------------------------
 
   private void recreateIndex(String indexName, boolean prod) throws Exception {
-    // DELETE
     boolean exists = elasticsearchClient.indices().exists(r -> r.index(indexName)).value();
     if (exists) {
       elasticsearchClient.indices().delete(r -> r.index(indexName));
       log.info("reindex: {} 삭제 완료", indexName);
     }
 
-    // JSON 로드
     String json = new String(
         new ClassPathResource("es-index/" + indexName + ".json")
             .getInputStream().readAllBytes(),
         StandardCharsets.UTF_8
     );
 
-    // prod면 사전 경로 치환
     if (prod) {
       for (Map.Entry<String, String> entry : PROD_PATH_MAP.entrySet()) {
         json = json.replace(entry.getKey(), entry.getValue());
       }
     }
 
-    // PUT
     InputStream is = new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8));
     elasticsearchClient.indices().create(
         CreateIndexRequest.of(r -> r.index(indexName).withJson(is))

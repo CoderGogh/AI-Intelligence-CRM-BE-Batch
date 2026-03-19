@@ -18,7 +18,7 @@ public class ConsultationRawText {
     private Long consultId;
 
     @Column(columnDefinition = "json", nullable = false)
-    private String rawTextJson; // 화자별 대화 내용이 담긴 JSON
+    private String rawTextJson; 
 
     private LocalDateTime createdDate;
     private LocalDateTime updatedAt;

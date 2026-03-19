@@ -27,7 +27,7 @@ public class GeminiExtractor {
     private final RestClient restClient = RestClient.builder()
             .requestFactory(new SimpleClientHttpRequestFactory() {{
                 setConnectTimeout(10000);
-                setReadTimeout(180000); // 번들 처리를 위해 3분으로 확장
+                setReadTimeout(180000); 
             }})
             .build();
 

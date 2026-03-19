@@ -170,7 +170,7 @@ public class OutboundConsultationFactory {
                 PreparedStatement ps = con.prepareStatement(resultSql, Statement.RETURN_GENERATED_KEYS);
                 ps.setInt(1, empId);
                 ps.setLong(2, custId);
-                ps.setString(3, "CALL");     // 아웃바운드는 항상 CALL
+                ps.setString(3, "CALL");   
                 ps.setString(4, catCode);
                 ps.setInt(5, dur);
                 ps.setString(6, issue);
@@ -323,7 +323,6 @@ public class OutboundConsultationFactory {
         List<Object[]> args = new ArrayList<>();
         String[] riskLevels = {"LOW", "LOW", "LOW", "MEDIUM", "MEDIUM", "HIGH", "CRITICAL"};
         for (int i = 0; i < consultIds.size(); i++) {
-            // 아웃바운드 대상은 이탈 위험 고객 → 항상 risk log 생성
             String typeCode  = random.nextInt(100) < 70 ? "CHURN" : "COMP";
             String levelCode = riskLevels[random.nextInt(riskLevels.length)];
             args.add(new Object[]{consultIds.get(i), empIds.get(i), customerIds.get(i), typeCode, levelCode});

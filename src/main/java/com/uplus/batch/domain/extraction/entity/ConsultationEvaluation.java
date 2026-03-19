@@ -34,7 +34,6 @@ public class ConsultationEvaluation {
         this.score = score;
         this.evaluationReason = evaluationReason;
         this.isCandidate = isCandidate;
-        // ✅ 후보군(isCandidate=true)인 경우에만 PENDING으로 시작, 아니면 REJECTED나 NULL 처리
         this.selectionStatus = isCandidate ? SelectionStatus.PENDING : SelectionStatus.REJECTED;
     }
 }

@@ -41,7 +41,7 @@ public class ResultEventStatus {
     @Column(name = "started_at")
     private LocalDateTime startedAt;
 
-    @UpdateTimestamp // 수정 시 자동으로 시간 업데이트
+    @UpdateTimestamp 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
@@ -53,7 +53,6 @@ public class ResultEventStatus {
         this.retryCount = 0;
     }
 
-    // --- 비즈니스 로직 (상태 제어) ---
     public void start() {
         this.status = EventStatus.PROCESSING;
         this.startedAt = LocalDateTime.now();
