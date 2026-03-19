@@ -24,7 +24,7 @@ public interface ResultEventStatusRepository extends JpaRepository<ResultEventSt
         List<ResultEventStatus> findReadyToProcessPairs(Pageable pageable);
     
     @Modifying
-    @Query("UPDATE ResultEventStatus r SET r.status = 'READY' " +
+    @Query("UPDATE ResultEventStatus r SET r.status = 'REQUESTED' " +
            "WHERE r.status = 'PROCESSING' AND r.updatedAt < :threshold")
     int cleanupStaleProcessingTasks(@Param("threshold") LocalDateTime threshold);
 }
