@@ -225,49 +225,5 @@ http://localhost:8081/swagger-ui.html
 
 | 레포 | 설명 |
 | :--- | :--- |
-| [4Ureca/Ureca4_BE_api](https://github.com/4Ureca/Ureca4_BE_api) | API 서버 — 실시간 상담 조회·검색 API, 인프라 Docker 구성 포함 |
+| [4Ureca/Ureca4_BE_api](https://github.com/CoderGogh/AI-Intelligence-CRM-BE-Api) | API 서버 — 실시간 상담 조회·검색 API, 인프라 Docker 구성 포함 |
 | [CoderGogh/AI-Intelligence-CRM-BE-Batch](https://github.com/CoderGogh/AI-Intelligence-CRM-BE-Batch) | 이 레포 — 배치 처리 엔진 |
-
----
-
-## 📐 Git 컨벤션
-
-### 브랜치 전략
-
-| 브랜치 | 설명 |
-| :--- | :--- |
-| `main` | 배포 대상 브랜치 |
-| `develop` | 개발 통합 브랜치 |
-| `feat/{feature-name}` | 기능 개발 브랜치 — develop으로 병합 |
-| `hotfix/` | 버그 수정 브랜치 |
-| `docs/` | 문서 작업 브랜치 |
-
-**브랜치 예시**
-
-```
-feat/users
-feat/consult
-feat/jira에_등록된_기능_이름
-```
-
-### 커밋 타입
-
-| 타입 | 설명 |
-| :--- | :--- |
-| `feat` | 새로운 기능 추가 또는 요구사항 반영 수정 |
-| `fix` | 버그 수정 |
-| `build` | 빌드 설정, 모듈 설치·삭제 |
-| `chore` | 패키지 매니저, `.gitignore` 등 기타 수정 |
-| `ci` | CI 설정 수정 |
-| `docs` | 문서·주석 수정 |
-| `style` | 코드 스타일·포맷팅 수정 |
-| `refactor` | 기능 변화 없는 코드 리팩터링 |
-| `test` | 테스트 코드 추가·수정 |
-| `release` | 버전 릴리즈 |
-
-**커밋 메시지 예시**
-
-```
-feat/홍길동/batch/상담데이터_elasticsearch_인덱싱_배치_구현
-fix/홍길동/batch/gemini_api_재시도_로직_수정
-```
