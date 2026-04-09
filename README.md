@@ -40,7 +40,7 @@
 
 | 서버 | 역할 | 포트 |
 | :--- | :--- | :---: |
-| **API Server** ([Ureca4_BE_api](https://github.com/4Ureca/Ureca4_BE_api)) | 실시간 사용자 요청 처리, 상담 조회·검색 API | `8080` |
+| **API Server** ([CoderGogh/AI-Intelligence-CRM-BE-Api](https://github.com/4Ureca/Ureca4_BE_api)) | 실시간 사용자 요청 처리, 상담 조회·검색 API | `8080` |
 | **Batch Server** (이 레포) | 대용량 상담 데이터 배치 처리, AI 분석, 검색 인덱싱 | `8081` |
 
 ---
@@ -225,5 +225,5 @@ http://localhost:8081/swagger-ui.html
 
 | 레포 | 설명 |
 | :--- | :--- |
-| [4Ureca/Ureca4_BE_api](https://github.com/CoderGogh/AI-Intelligence-CRM-BE-Api) | API 서버 — 실시간 상담 조회·검색 API, 인프라 Docker 구성 포함 |
+| [CoderGogh/AI-Intelligence-CRM-BE-Api](https://github.com/CoderGogh/AI-Intelligence-CRM-BE-Api) | API 서버 — 실시간 상담 조회·검색 API, 인프라 Docker 구성 포함 |
 | [CoderGogh/AI-Intelligence-CRM-BE-Batch](https://github.com/CoderGogh/AI-Intelligence-CRM-BE-Batch) | 이 레포 — 배치 처리 엔진 |
