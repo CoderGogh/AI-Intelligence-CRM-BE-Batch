@@ -155,7 +155,7 @@ cp .env.example .env
 
 - Java 17+
 - Gradle
-- **인프라 컨테이너 실행 필수** — [API 서버 레포](https://github.com/4Ureca/Ureca4_BE_api)의 `docker/` 폴더에서 먼저 실행해야 합니다.
+- **인프라 컨테이너 실행 필수** — [API 서버 레포](https://github.com/CoderGogh/AI-Intelligence-CRM-BE-Api)의 `docker/` 폴더에서 먼저 실행해야 합니다.
 
 ### 인프라 실행 (API 서버 레포 기준)
 
