@@ -225,5 +225,6 @@ http://localhost:8081/swagger-ui.html
 
 | 레포 | 설명 |
 | :--- | :--- |
+| [CoderGogh/AI-Intelligence-CRM-FE](https://github.com/CoderGogh/AI-Intelligence-CRM-FE) | Frontend 대시보드 — React 19 + TanStack Start · `:3000` |
 | [CoderGogh/AI-Intelligence-CRM-BE-Api](https://github.com/CoderGogh/AI-Intelligence-CRM-BE-Api) | API 서버 — 실시간 상담 조회·검색 API, 인프라 Docker 구성 포함 |
 | [CoderGogh/AI-Intelligence-CRM-BE-Batch](https://github.com/CoderGogh/AI-Intelligence-CRM-BE-Batch) | 이 레포 — 배치 처리 엔진 |
